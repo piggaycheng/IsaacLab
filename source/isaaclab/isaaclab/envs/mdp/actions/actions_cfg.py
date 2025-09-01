@@ -9,7 +9,14 @@ from isaaclab.controllers import DifferentialIKControllerCfg, OperationalSpaceCo
 from isaaclab.managers.action_manager import ActionTerm, ActionTermCfg
 from isaaclab.utils import configclass
 
-from . import binary_joint_actions, joint_actions, joint_actions_to_limits, non_holonomic_actions, task_space_actions
+from . import (
+    binary_joint_actions,
+    joint_actions,
+    joint_actions_to_limits,
+    non_holonomic_actions,
+    task_space_actions,
+    pmtg_actions,
+)
 
 ##
 # Joint actions.
@@ -65,6 +72,37 @@ class RelativeJointPositionActionCfg(JointActionCfg):
 
     If True, this flag results in overwriting the values of :attr:`offset` to zero.
     """
+
+
+@configclass
+class PMTGJointPositionActionCfg(ActionTermCfg):
+    """Configuration for a PMTG-driven joint position action term.
+
+    The policy outputs a latent vector (latent_dim). The PMTG converts it to joint position targets
+    as a time-varying trajectory at simulation rate.
+    """
+
+    class_type: type[ActionTerm] = pmtg_actions.PMTGJointPositionAction
+
+    # mapping to joints
+    joint_names: list[str] = MISSING
+    preserve_order: bool = False
+
+    # latent dimension (policy output)
+    latent_dim: int = MISSING
+
+    # PMTG parameters (sinusoidal baseline)
+    pmtg_type: str = "sinusoid"
+    freq_hz: float = 1.0
+    amp_scale: float = 1.0
+    bias_scale: float = 0.0
+    phase_scale: float = 3.141592653589793
+
+    # output scaling/offset on joint space
+    output_scale: float | dict[str, float] = 1.0
+    output_offset: float | dict[str, float] = 0.0
+    use_default_offset: bool = True
+    """Use the articulation's default joint positions as output_offset (overrides provided value)."""
 
 
 @configclass
