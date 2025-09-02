@@ -109,18 +109,7 @@ class CommandsCfg:
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    # Use PMTG-driven joint position term: policy outputs a latent vector which PMTG maps to joint targets
-    joint_pos = mdp.PMTGJointPositionActionCfg(
-        asset_name="robot",
-        joint_names=[".*"],
-        latent_dim=8,            # choose your policy latent size
-        freq_hz=1.5,             # gait frequency (Hz)
-        amp_scale=1.0,
-        bias_scale=0.0,
-        phase_scale=3.14159265,
-        output_scale=0.5,        # overall joint target scale
-        use_default_offset=True, # center around default joint pos
-    )
+    joint_pos = mdp.JointPositionActionCfg(asset_name="robot", joint_names=[".*"], scale=0.5, use_default_offset=True)
 
 
 @configclass
