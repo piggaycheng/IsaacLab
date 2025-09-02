@@ -1,10 +1,15 @@
+# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 from __future__ import annotations
 
 import math
+import torch
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import torch
 import omni.log
 
 import isaaclab.utils.string as string_utils
@@ -13,6 +18,7 @@ from isaaclab.managers.action_manager import ActionTerm
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
+
     from .actions_cfg import PMTGJointPositionActionCfg
 
 
@@ -63,16 +69,23 @@ class PMTGJointPositionAction(ActionTerm):
         self._bias_scale = float(cfg.bias_scale)
         self._phase_scale = float(cfg.phase_scale)
 
+        # fixed per-joint phase offsets (e.g., to enforce gait leg phase relations)
+        phase_offset_value = getattr(cfg, "phase_offset", 0.0)
+        self._phase_offset = self._parse_per_joint_value(phase_offset_value, default=0.0)
+
         # time per env (seconds)
         self._t = torch.zeros(self.num_envs, device=self.device)
 
         # optional per-joint clip from cfg.clip if provided at ActionTermCfg level
         self._clip = None
-        if cfg.clip is not None:
+        clip_cfg = getattr(cfg, "clip", None)
+        if clip_cfg is not None:
             clip = torch.tensor([[-float("inf"), float("inf")]], device=self.device).repeat(
                 self.num_envs, self._num_joints, 1
             )
-            index_list, _, value_list = string_utils.resolve_matching_names_values(cfg.clip, self._joint_names)
+            index_list, _, value_list = string_utils.resolve_matching_names_values(clip_cfg, self._joint_names)
+            clip[:, index_list] = torch.tensor(value_list, device=self.device)
+            self._clip = clip
             clip[:, index_list] = torch.tensor(value_list, device=self.device)
             self._clip = clip
 
@@ -108,7 +121,7 @@ class PMTGJointPositionAction(ActionTerm):
         # compute per-joint parameters from latent
         amp = torch.tanh(self._latent @ self._W_amp) * self._amp_scale
         bias = torch.tanh(self._latent @ self._W_bias) * self._bias_scale
-        phase = (self._latent @ self._W_phase) * self._phase_scale
+        phase = (self._latent @ self._W_phase) * self._phase_scale + self._phase_offset
 
         # time advance (env.physics_dt at sim-rate)
         omega_t = (2 * math.pi * self._freq) * self._t.unsqueeze(-1)

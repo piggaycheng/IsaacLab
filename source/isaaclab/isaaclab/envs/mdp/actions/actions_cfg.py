@@ -14,8 +14,8 @@ from . import (
     joint_actions,
     joint_actions_to_limits,
     non_holonomic_actions,
-    task_space_actions,
     pmtg_actions,
+    task_space_actions,
 )
 
 ##
@@ -97,6 +97,10 @@ class PMTGJointPositionActionCfg(ActionTermCfg):
     amp_scale: float = 1.0
     bias_scale: float = 0.0
     phase_scale: float = 3.141592653589793
+
+    # optional fixed per-joint phase offset (e.g., to enforce gait leg phase relations)
+    # can be a float (applied to all joints) or a dict mapping regex -> value
+    phase_offset: float | dict[str, float] | None = None
 
     # output scaling/offset on joint space
     output_scale: float | dict[str, float] = 1.0
