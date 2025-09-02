@@ -108,6 +108,16 @@ class PMTGJointPositionActionCfg(ActionTermCfg):
     use_default_offset: bool = True
     """Use the articulation's default joint positions as output_offset (overrides provided value)."""
 
+    # residual actions support (optional)
+    include_residual: bool = False
+    """If True, append per-joint residuals to action space and add to TG output."""
+    residual_scale: float | dict[str, float] = 1.0
+    """Scale for residual term before addition (float or per-joint dict)."""
+    residual_limit: float | None = None
+    """Convenience scalar residual clipping in [-limit, +limit] if provided."""
+    residual_clip: dict[str, tuple[float, float]] | None = None
+    """Per-joint residual clipping as regex -> (min, max); overrides residual_limit if set."""
+
 
 @configclass
 class JointVelocityActionCfg(JointActionCfg):

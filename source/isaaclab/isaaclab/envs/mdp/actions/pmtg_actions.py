@@ -32,6 +32,18 @@ class PMTGJointPositionAction(ActionTerm):
     cfg: PMTGJointPositionActionCfg
     _asset: Articulation
 
+    def _parse_per_joint_value(self, value, default: float) -> torch.Tensor:
+        """Parses a float or regex-dict into a (num_envs, num_joints) tensor on device."""
+        if isinstance(value, (float, int)):
+            return torch.full((self.num_envs, self._num_joints), float(value), device=self.device)
+        elif isinstance(value, dict):
+            tensor = torch.full((self.num_envs, self._num_joints), float(default), device=self.device)
+            idxs, _, vals = string_utils.resolve_matching_names_values(value, self._joint_names)
+            tensor[:, idxs] = torch.tensor(vals, device=self.device)
+            return tensor
+        else:
+            return torch.full((self.num_envs, self._num_joints), float(default), device=self.device)
+
     def __init__(self, cfg: PMTGJointPositionActionCfg, env: ManagerBasedEnv):
         super().__init__(cfg, env)
 
@@ -49,6 +61,27 @@ class PMTGJointPositionAction(ActionTerm):
         # latent dimension
         self._latent_dim = int(cfg.latent_dim)
         self._latent = torch.zeros(self.num_envs, self._latent_dim, device=self.device)
+        # whether to include per-joint residuals in the action space
+        # default False to preserve backward compatibility unless explicitly enabled in cfg
+        self._include_residual = bool(getattr(cfg, "include_residual", False))
+        # residual actions (per joint)
+        self._residual = torch.zeros(self.num_envs, self._num_joints, device=self.device)
+        # allow scaling and optional clipping of residual term
+        self._residual_scale = self._parse_per_joint_value(getattr(cfg, "residual_scale", 1.0), default=1.0)
+        self._residual_clip = None
+        residual_clip_cfg = getattr(cfg, "residual_clip", None)
+        if residual_clip_cfg is None:
+            # also support legacy scalar limit via `residual_limit`
+            residual_limit = getattr(cfg, "residual_limit", None)
+            if residual_limit is not None:
+                residual_clip_cfg = {".*": [-abs(float(residual_limit)), abs(float(residual_limit))]}
+        if residual_clip_cfg is not None:
+            rclip = torch.tensor([[-float("inf"), float("inf")]], device=self.device).repeat(
+                self.num_envs, self._num_joints, 1
+            )
+            r_index, _, r_values = string_utils.resolve_matching_names_values(residual_clip_cfg, self._joint_names)
+            rclip[:, r_index] = torch.tensor(r_values, device=self.device)
+            self._residual_clip = rclip
 
         # output scaling/offset
         self._out_scale = self._parse_per_joint_value(cfg.output_scale, default=1.0)
@@ -86,36 +119,67 @@ class PMTGJointPositionAction(ActionTerm):
             index_list, _, value_list = string_utils.resolve_matching_names_values(clip_cfg, self._joint_names)
             clip[:, index_list] = torch.tensor(value_list, device=self.device)
             self._clip = clip
-            clip[:, index_list] = torch.tensor(value_list, device=self.device)
-            self._clip = clip
+
+        # keep a copy of last raw action vector from the policy (for logging/inspection)
+        self._raw_action = None
 
     @property
     def action_dim(self) -> int:
-        # The manager will allocate latent_dim actions for this term
-        return self._latent_dim
+        # Manager allocates latent + optional per-joint residuals
+        return self._latent_dim + (self._num_joints if self._include_residual else 0)
 
     @property
     def raw_actions(self) -> torch.Tensor:
-        return self._latent
+        # Return the last raw action vector provided by the policy
+        if self._raw_action is None:
+            # before first action, synthesize from internal buffers
+            return self.processed_actions
+        return self._raw_action
 
     @property
     def processed_actions(self) -> torch.Tensor:
-        # PMTG uses the latent directly; joint targets are produced in apply_actions
-        return self._latent
+        # Concatenate latent and residual (if enabled) after basic validation/sanitization
+        if self._include_residual:
+            return torch.cat([self._latent, self._residual], dim=1)
+        else:
+            return self._latent
 
     def reset(self, env_ids):
         if env_ids is None:
             env_ids = slice(None)
         self._latent[env_ids] = 0.0
+        self._residual[env_ids] = 0.0
         self._t[env_ids] = 0.0
 
     def process_actions(self, actions: torch.Tensor):
-        # store current latent
-        if actions.shape[1] != self._latent_dim:
+        # Accept either [latent] or [latent | residual] for backward compatibility
+        self._raw_action = actions
+
+        if actions.dim() != 2 or actions.shape[0] != self.num_envs:
             raise ValueError(
-                f"PMTG latent dim mismatch: expected {self._latent_dim}, got {actions.shape[1]}"
+                f"Actions must be (num_envs, D). Got {tuple(actions.shape)} while num_envs={self.num_envs}."
             )
-        self._latent[:] = actions
+
+        if self._include_residual:
+            expected_with_res = self._latent_dim + self._num_joints
+            if actions.shape[1] == expected_with_res:
+                self._latent[:] = actions[:, : self._latent_dim]
+                self._residual[:] = actions[:, self._latent_dim :]
+            elif actions.shape[1] == self._latent_dim:
+                # allow latent-only input: zero residuals
+                self._latent[:] = actions
+                self._residual[:] = 0.0
+            else:
+                raise ValueError(
+                    f"PMTG action dim mismatch: expected {expected_with_res} (latent+residual) "
+                    f"or {self._latent_dim} (latent-only), got {actions.shape[1]}"
+                )
+        else:
+            if actions.shape[1] != self._latent_dim:
+                raise ValueError(
+                    f"PMTG latent dim mismatch: expected {self._latent_dim}, got {actions.shape[1]}"
+                )
+            self._latent[:] = actions
 
     def apply_actions(self):
         # compute per-joint parameters from latent
@@ -126,6 +190,13 @@ class PMTGJointPositionAction(ActionTerm):
         # time advance (env.physics_dt at sim-rate)
         omega_t = (2 * math.pi * self._freq) * self._t.unsqueeze(-1)
         joint_cmd = amp * torch.sin(omega_t + phase) + bias
+
+        # optional per-joint residual term from the policy
+        if self._include_residual:
+            residual = self._residual * self._residual_scale
+            if self._residual_clip is not None:
+                residual = torch.clamp(residual, min=self._residual_clip[:, :, 0], max=self._residual_clip[:, :, 1])
+            joint_cmd = joint_cmd + residual
 
         # scale/offset to joint space
         joint_targets = joint_cmd * self._out_scale + self._out_offset
@@ -138,15 +209,3 @@ class PMTGJointPositionAction(ActionTerm):
 
         # increment time
         self._t += self._env.physics_dt
-
-    def _parse_per_joint_value(self, value, default: float) -> torch.Tensor:
-        """Parses a float or regex-dict into a (num_envs, num_joints) tensor on device."""
-        if isinstance(value, (float, int)):
-            return torch.full((self.num_envs, self._num_joints), float(value), device=self.device)
-        elif isinstance(value, dict):
-            tensor = torch.full((self.num_envs, self._num_joints), float(default), device=self.device)
-            idxs, _, vals = string_utils.resolve_matching_names_values(value, self._joint_names)
-            tensor[:, idxs] = torch.tensor(vals, device=self.device)
-            return tensor
-        else:
-            return torch.full((self.num_envs, self._num_joints), float(default), device=self.device)
