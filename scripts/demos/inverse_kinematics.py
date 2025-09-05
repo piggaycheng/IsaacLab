@@ -28,12 +28,16 @@ from isaacsim.robot_motion.motion_generation import (
     LulaKinematicsSolver,
 )
 
+import omni
+from omni.timeline import get_timeline_interface
+from pxr import UsdPhysics
+
 
 @dataclass
 class KinematicsConfig:
     robot_description_path: str
     urdf_path: str
-    end_effector_name: str = "RR_foot"
+    end_effector_name: str = "FL_foot"
 
 
 class RobotController:
@@ -42,8 +46,8 @@ class RobotController:
     def __init__(self, robot_prim_path: str, kinematics_config: KinematicsConfig):
         self.robot_prim_path = robot_prim_path
         self.cfg = kinematics_config
-        self.robot = SingleArticulation(prim_path=robot_prim_path, position=(0, 0, 0.5))
-        self.target = SingleXFormPrim("/World/Target", position=(0.5, 0.0, 0.5))
+        self.robot = SingleArticulation(prim_path=robot_prim_path, position=(0, 0, 0.0))
+        self.target = SingleXFormPrim("/World/Target", position=(0.2, 0.15, -0.25))
 
         kinematics_solver = LulaKinematicsSolver(
             robot_description_path=self.cfg.robot_description_path,
@@ -63,7 +67,7 @@ class RobotController:
 
         # Perform IK each physics step
         target_pos, target_orn = self.target.get_world_pose()
-        action, success = self.ik_solver.compute_inverse_kinematics(target_pos, target_orn)
+        action, success = self.ik_solver.compute_inverse_kinematics(target_pos)
         if success:
             # Apply returned joint position command vector
             self.robot.apply_action(action)
@@ -84,7 +88,12 @@ def _create_world():  # Returns an instance compatible with World API (typing re
     physics_dt = 1.0 / 200.0
     render_dt = 1.0 / 50.0
     world = World(stage_units_in_meters=1.0, physics_dt=physics_dt, rendering_dt=render_dt)
-    GroundPlane(prim_path="/World/GroundPlane", z_position=0.0)
+    GroundPlane(prim_path="/World/GroundPlane", z_position=-0.5)
+
+    # stage = omni.usd.get_context().get_stage()
+    # scene = UsdPhysics.Scene.Define(stage, "/World/physics")
+    # scene.CreateGravityMagnitudeAttr().Set(0.0)
+
     return world  # type: ignore
 
 
@@ -110,16 +119,14 @@ def main():
 
     # Kinematics configuration (paths kept as provided by user environment)
     kinematics_config = KinematicsConfig(
-        robot_description_path="D:/Users/yucheng/Documents/MyIsaacLab/source/isaaclab_tasks/isaaclab_tasks/manager_based/locomotion/velocity/config/go2/robot_description/go2_robot_description.yaml",
-        urdf_path="D:/Users/yucheng/Documents/MyIsaacLab/source/isaaclab_tasks/isaaclab_tasks/manager_based/locomotion/velocity/config/go2/robot_description/go2_description.urdf",
-        end_effector_name="RR_foot",
+        robot_description_path="C:/Users/yucheng/Documents/code/MyIsaacLab/source/isaaclab_tasks/isaaclab_tasks/manager_based/locomotion/velocity/config/go2/robot_description/go2_robot_description.yaml",
+        urdf_path="C:/Users/yucheng/Documents/code/MyIsaacLab/source/isaaclab_tasks/isaaclab_tasks/manager_based/locomotion/velocity/config/go2/robot_description/go2_description.urdf",
+        end_effector_name="FL_foot",
     )
 
     # Create controller & register callbacks
     controller = RobotController(robot_prim_path, kinematics_config)
     world.add_physics_callback("robot_ik_callback", controller.on_physics_step)
-
-    from omni.timeline import get_timeline_interface
 
     timeline = get_timeline_interface()
     # Timeline stop event stream (typing may not expose get_stop_event_stream; ignore if unresolved)
