@@ -56,7 +56,7 @@ class TrotTrajectoryGenerator:
         # 參數裁剪與讀取
         target_frequency = np.clip(actions['frequency'], 1.0, 4.0)
         target_step_height = np.clip(actions['step_height'], 0.02, 0.15)
-        target_swing_duty_cycle = np.clip(actions['swing_duty_cycle'], 0.2, 0.8)
+        target_swing_duty_cycle = np.clip(actions.get('swing_duty_cycle', 0.5), 0.2, 0.8)
         target_stance_duty_cycle = 1.0 - target_swing_duty_cycle
         target_step_length_x = np.clip(actions['step_length_x'], -0.3, 0.3)
         target_step_length_y = np.clip(actions['step_length_y'], -0.3, 0.3)
