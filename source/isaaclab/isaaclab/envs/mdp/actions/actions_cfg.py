@@ -75,51 +75,6 @@ class RelativeJointPositionActionCfg(JointActionCfg):
 
 
 @configclass
-class PMTGJointPositionActionCfg(ActionTermCfg):
-    """Configuration for a PMTG-driven joint position action term.
-
-    The policy outputs a latent vector (latent_dim). The PMTG converts it to joint position targets
-    as a time-varying trajectory at simulation rate.
-    """
-
-    class_type: type[ActionTerm] = pmtg_actions.PMTGJointPositionAction
-
-    # mapping to joints
-    joint_names: list[str] = MISSING
-    preserve_order: bool = False
-
-    # latent dimension (policy output)
-    latent_dim: int = MISSING
-
-    # PMTG parameters (sinusoidal baseline)
-    pmtg_type: str = "sinusoid"
-    freq_hz: float = 1.0
-    amp_scale: float = 1.0
-    bias_scale: float = 0.0
-    phase_scale: float = 3.141592653589793
-
-    # optional fixed per-joint phase offset (e.g., to enforce gait leg phase relations)
-    # can be a float (applied to all joints) or a dict mapping regex -> value
-    phase_offset: float | dict[str, float] | None = None
-
-    # output scaling/offset on joint space
-    output_scale: float | dict[str, float] = 1.0
-    output_offset: float | dict[str, float] = 0.0
-    use_default_offset: bool = True
-    """Use the articulation's default joint positions as output_offset (overrides provided value)."""
-
-    # residual actions support (optional)
-    include_residual: bool = False
-    """If True, append per-joint residuals to action space and add to TG output."""
-    residual_scale: float | dict[str, float] = 1.0
-    """Scale for residual term before addition (float or per-joint dict)."""
-    residual_limit: float | None = None
-    """Convenience scalar residual clipping in [-limit, +limit] if provided."""
-    residual_clip: dict[str, tuple[float, float]] | None = None
-    """Per-joint residual clipping as regex -> (min, max); overrides residual_limit if set."""
-
-
-@configclass
 class JointVelocityActionCfg(JointActionCfg):
     """Configuration for the joint velocity action term.
 
@@ -362,3 +317,14 @@ class OperationalSpaceControllerActionCfg(ActionTermCfg):
     Note: Functional only when ``nullspace_control`` is set to ``"position"`` within the
         ``OperationalSpaceControllerCfg``.
     """
+
+
+@configclass
+class PMTGJointPositionActionCfg(DifferentialInverseKinematicsActionCfg):
+    """Configuration for a PMTG-driven joint position action term.
+
+    The policy outputs a gait schedule (gait_sched). The PMTG converts it to joint position targets
+    as a time-varying trajectory at simulation rate.
+    """
+
+    class_type: type[ActionTerm] = pmtg_actions.PMTGJointPositionAction
