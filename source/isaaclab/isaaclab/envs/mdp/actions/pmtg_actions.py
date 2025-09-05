@@ -47,20 +47,36 @@ class TrotTrajectoryGenerator:
 
         Args:
             actions (dict): 來自 policy 的調變參數：
-                frequency, step_height, swing_duty_cycle, step_length_x, step_length_y, yaw_rotation_rate(optional)
+                frequency, step_height, swing_duty_cycle, stance_vx, stance_vy, yaw_rotation_rate(optional)
+                說明：改為以支撐相期望腳相對身體的速度 (stance_vx, stance_vy) 來間接決定步幅，
+                減少策略直接輸出步幅所需的耦合與尺度推理負擔。
             dt (float): 單步控制時間 (s)。
 
         Returns:
             np.ndarray: shape (3,) -> [x, y, z]
         """
-        # 參數裁剪與讀取
-        target_frequency = np.clip(actions['frequency'], 1.0, 4.0)
-        target_step_height = np.clip(actions['step_height'], 0.02, 0.15)
-        target_swing_duty_cycle = np.clip(actions.get('swing_duty_cycle', 0.5), 0.2, 0.8)
+        # 1. 參數裁剪與讀取
+        target_frequency = float(np.clip(actions['frequency'], 1.0, 4.0))  # Hz
+        target_step_height = float(np.clip(actions['step_height'], 0.02, 0.15))  # m
+        target_swing_duty_cycle = float(np.clip(actions.get('swing_duty_cycle', 0.5), 0.2, 0.8))
         target_stance_duty_cycle = 1.0 - target_swing_duty_cycle
-        target_step_length_x = np.clip(actions['step_length_x'], -0.3, 0.3)
-        target_step_length_y = np.clip(actions['step_length_y'], -0.3, 0.3)
-        target_yaw_rate = actions.get('yaw_rotation_rate', 0.0)
+        # Policy 直接輸出的「支撐相中腳相對身體座標系的期望速度」(m/s)
+        target_stance_vx = float(np.clip(actions['stance_vx'], -0.8, 0.8))
+        target_stance_vy = float(np.clip(actions['stance_vy'], -0.5, 0.5))
+        target_yaw_rate = float(actions.get('yaw_rotation_rate', 0.0))  # rad/s (相對簡化)
+
+        # 2. 由支撐相速度 -> 推導步幅 (總位移 L)。
+        # 物理近似：步幅 L = v_stance * T_stance，其中 T_stance = stance_duty_cycle / frequency。
+        # 原先軌跡公式使用的 step_length 表示總掃掠距離 L，位置線性從 +L/2 -> -L/2。
+        # 在該線性段中：x(phase) = L * (0.5 - p)，p∈[0,1]，因此腳相對身體速度 (忽略相位到時間縮放) 為常數。
+        # 真正速度：dx/dt = (-L) * (frequency / stance_duty_cycle)。期望其 ≈ target_stance_vx。
+        # 反推 L = target_stance_vx * (stance_duty_cycle / frequency)。與 v_stance * T_stance 一致。
+        stance_duration = target_stance_duty_cycle / target_frequency  # seconds
+        target_step_length_x = target_stance_vx * stance_duration
+        target_step_length_y = target_stance_vy * stance_duration
+        # 出於穩定性與與舊界面幅值尺度一致，仍然裁剪 (若需要可調整範圍)。
+        target_step_length_x = float(np.clip(target_step_length_x, -0.3, 0.3))
+        target_step_length_y = float(np.clip(target_step_length_y, -0.3, 0.3))
 
         # 更新相位
         self._update_phase(target_frequency, dt)
