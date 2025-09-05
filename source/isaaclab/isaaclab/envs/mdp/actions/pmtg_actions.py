@@ -13,21 +13,40 @@ class PMTGJointPositionAction(DifferentialInverseKinematicsAction):
     pass
 
 
-class TrotTrajectoryGenerator:
-    """
-    單條腿（用於四足 Trot 步態中的任一腿）之策略模組化軌跡生成器。
+import numpy as np
 
-    與原始版本不同：此類別僅追蹤並產生「一條腿」的足端相對髖關節座標系的目標位置 (x, y, z)。
-    需要的外部管理者可各自為四條腿建立四個實例，並使用不同的 `phase_offset` 與 `leg_hip_position`。
+
+class HybridFourDimTrajectoryGenerator:
+    """
+    單條腿之混合控制軌跡生成器。
+
+    它接收一個 4 維的完整動作向量，4個維度分別是:
+
+    - 前進速度 (stance_vx)
+    - 側向速度 (stance_vy)
+    - 轉向角速度 (yaw_rotation_rate)
+    - 抬腿高度 (step_height)
+
+    步頻 (frequency) 會根據期望速度自動調整，而擺動相占空比 (swing_duty_cycle) 則固定。
     """
 
-    def __init__(self, phase_offset: float = 0.0, leg_hip_position: np.ndarray | None = None):
+    def __init__(self,
+                 phase_offset: float = 0.0,
+                 leg_hip_position: np.ndarray | None = None,
+                 # --- 可配置的內部參數 ---
+                 base_frequency: float = 1.5,
+                 velocity_to_freq_gain: float = 0.8,
+                 default_swing_duty_cycle: float = 0.5
+                 ):
         """
         初始化單腿軌跡生成器。
 
         Args:
             phase_offset (float): 此腿的初始相位 (0~1)。
-            leg_hip_position (np.ndarray | None): shape (3,) 髖關節在機身座標系下的位置，用於轉向時的切向速度估算。
+            leg_hip_position (np.ndarray | None): shape (3,) 髖關節在機身座標系下的位置。
+            base_frequency (float): 基礎步頻 (Hz)。
+            velocity_to_freq_gain (float): 速度轉換為額外步頻的增益。
+            default_swing_duty_cycle (float): 固定的擺動相占空比。
         """
         self.phase = float(phase_offset % 1.0)
         if leg_hip_position is None:
@@ -37,15 +56,16 @@ class TrotTrajectoryGenerator:
             assert leg_hip_position.shape == (3,), "leg_hip_position 必須是 shape (3,) 的向量"
             self.leg_hip_position = leg_hip_position
 
-        # **非常重要**: 定義Policy輸出陣列中每個索引的含義
-        # 這個順序必須與你定義RL Action Space時的順序完全一致！
-        self.ACTION_KEYS = [
-            'frequency',
-            'step_height',
-            'swing_duty_cycle',
+        self.base_frequency = base_frequency
+        self.velocity_to_freq_gain = velocity_to_freq_gain
+        self.default_swing_duty_cycle = default_swing_duty_cycle
+
+        # **重要**: 定義用於生成軌跡的 4 個動作的鍵
+        self.TRAJECTORY_ACTION_KEYS = [
             'stance_vx',
             'stance_vy',
-            'yaw_rotation_rate'
+            'yaw_rotation_rate',
+            'step_height'
         ]
 
     def _update_phase(self, frequency: float, dt: float):
@@ -57,43 +77,44 @@ class TrotTrajectoryGenerator:
         計算單腿足端目標 (x, y, z)。
 
         Args:
-            actions (dict): 來自 policy 的調變參數：
-                frequency, step_height, swing_duty_cycle, stance_vx, stance_vy, yaw_rotation_rate(optional)
-                說明：改為以支撐相期望腳相對身體的速度 (stance_vx, stance_vy) 來間接決定步幅，
-                減少策略直接輸出步幅所需的耦合與尺度推理負擔。
+            actions (dict): 來自 policy 的 4 維調變參數字典。
             dt (float): 單步控制時間 (s)。
 
         Returns:
             np.ndarray: shape (3,) -> [x, y, z]
         """
-        # 1. 參數裁剪與讀取
-        target_frequency = float(np.clip(actions['frequency'], 1.0, 4.0))  # Hz
-        target_step_height = float(np.clip(actions['step_height'], 0.02, 0.15))  # m
-        target_swing_duty_cycle = float(np.clip(actions.get('swing_duty_cycle', 0.5), 0.2, 0.8))
-        target_stance_duty_cycle = 1.0 - target_swing_duty_cycle
-        # Policy 直接輸出的「支撐相中腳相對身體座標系的期望速度」(m/s)
+        # --- 這部分的邏輯與之前的 4D 版本完全相同 ---
+
+        # 1. 讀取 4 維參數並裁剪
         target_stance_vx = float(np.clip(actions['stance_vx'], -0.8, 0.8))
         target_stance_vy = float(np.clip(actions['stance_vy'], -0.5, 0.5))
-        target_yaw_rate = float(actions.get('yaw_rotation_rate', 0.0))  # rad/s (相對簡化)
+        target_yaw_rate = float(np.clip(actions.get('yaw_rotation_rate', 0.0), -1.5, 1.5))
+        target_step_height = float(np.clip(actions['step_height'], 0.02, 0.15))
 
-        # 2. 由支撐相速度 -> 推導步幅 (總位移 L)。
-        # 物理近似：步幅 L = v_stance * T_stance，其中 T_stance = stance_duty_cycle / frequency。
-        # 原先軌跡公式使用的 step_length 表示總掃掠距離 L，位置線性從 +L/2 -> -L/2。
-        # 在該線性段中：x(phase) = L * (0.5 - p)，p∈[0,1]，因此腳相對身體速度 (忽略相位到時間縮放) 為常數。
-        # 真正速度：dx/dt = (-L) * (frequency / stance_duty_cycle)。期望其 ≈ target_stance_vx。
-        # 反推 L = target_stance_vx * (stance_duty_cycle / frequency)。與 v_stance * T_stance 一致。
-        stance_duration = target_stance_duty_cycle / target_frequency  # seconds
+        # 2. 自動推算步頻
+        linear_speed = np.sqrt(target_stance_vx**2 + target_stance_vy**2)
+        target_frequency = self.base_frequency + self.velocity_to_freq_gain * linear_speed
+        target_frequency = float(np.clip(target_frequency, 1.0, 4.0))
+
+        # 3. 使用固定的占空比
+        target_swing_duty_cycle = self.default_swing_duty_cycle
+        target_stance_duty_cycle = 1.0 - target_swing_duty_cycle
+
+        # 4. 推導步幅
+        if target_frequency < 1e-6:
+            stance_duration = 0
+        else:
+            stance_duration = target_stance_duty_cycle / target_frequency
+
         target_step_length_x = target_stance_vx * stance_duration
         target_step_length_y = target_stance_vy * stance_duration
-        # 出於穩定性與與舊界面幅值尺度一致，仍然裁剪 (若需要可調整範圍)。
         target_step_length_x = float(np.clip(target_step_length_x, -0.3, 0.3))
         target_step_length_y = float(np.clip(target_step_length_y, -0.3, 0.3))
 
-        # 更新相位
+        # 5. 更新相位並計算軌跡
         self._update_phase(target_frequency, dt)
         phase = self.phase
 
-        # 擺動 or 支撐
         if phase < target_swing_duty_cycle:
             is_swing = True
             phase_in_swing = phase / target_swing_duty_cycle
@@ -101,13 +122,8 @@ class TrotTrajectoryGenerator:
             is_swing = False
             phase_in_stance = (phase - target_swing_duty_cycle) / target_stance_duty_cycle
 
-        # z 軌跡（抬腿）
-        if is_swing:
-            z = target_step_height * np.sin(np.pi * phase_in_swing)
-        else:
-            z = 0.0
+        z = target_step_height * np.sin(np.pi * phase_in_swing) if is_swing else 0.0
 
-        # x, y 軌跡
         if is_swing:
             swing_multiplier = -0.5 * np.cos(np.pi * phase_in_swing)
             x = target_step_length_x * swing_multiplier
@@ -117,11 +133,9 @@ class TrotTrajectoryGenerator:
             x = target_step_length_x * stance_multiplier
             y = target_step_length_y * stance_multiplier
 
-        # 轉向：僅在支撐相施加切向漂移（簡化）
-        if not is_swing and target_frequency > 0.0:
+        if not is_swing and target_frequency > 1e-6:
             yaw_effect_x = -self.leg_hip_position[1] * target_yaw_rate / target_frequency
             yaw_effect_y = self.leg_hip_position[0] * target_yaw_rate / target_frequency
-            # 使用 (1 - 2*phase_in_stance) 保持與原設計一致的線性掃掠
             scale = (1 - 2 * phase_in_stance)
             x += yaw_effect_x * scale
             y += yaw_effect_y * scale
@@ -132,4 +146,4 @@ class TrotTrajectoryGenerator:
         """
         將Policy輸出的np.ndarray轉換為帶有鍵的字典。
         """
-        return {key: value for key, value in zip(self.ACTION_KEYS, action_array)}
+        return {key: value for key, value in zip(self.TRAJECTORY_ACTION_KEYS, action_array)}
