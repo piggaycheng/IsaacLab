@@ -37,6 +37,17 @@ class TrotTrajectoryGenerator:
             assert leg_hip_position.shape == (3,), "leg_hip_position 必須是 shape (3,) 的向量"
             self.leg_hip_position = leg_hip_position
 
+        # **非常重要**: 定義Policy輸出陣列中每個索引的含義
+        # 這個順序必須與你定義RL Action Space時的順序完全一致！
+        self.ACTION_KEYS = [
+            'frequency',
+            'step_height',
+            'swing_duty_cycle',
+            'stance_vx',
+            'stance_vy',
+            'yaw_rotation_rate'
+        ]
+
     def _update_phase(self, frequency: float, dt: float):
         """根據頻率與時間步長更新此腿相位。"""
         self.phase = (self.phase + frequency * dt) % 1.0
@@ -116,3 +127,9 @@ class TrotTrajectoryGenerator:
             y += yaw_effect_y * scale
 
         return np.array([x, y, z], dtype=float)
+
+    def _unpack_action_array_to_dict(self, action_array: np.ndarray) -> dict:
+        """
+        將Policy輸出的np.ndarray轉換為帶有鍵的字典。
+        """
+        return {key: value for key, value in zip(self.ACTION_KEYS, action_array)}
