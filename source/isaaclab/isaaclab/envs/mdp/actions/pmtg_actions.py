@@ -5,22 +5,51 @@
 
 from __future__ import annotations
 
-import numpy as np
+import torch
+from typing import TYPE_CHECKING, Sequence
+
 from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
+from isaaclab.managers.action_manager import ActionTerm
+
+if TYPE_CHECKING:
+    from isaaclab.envs import ManagerBasedEnv
+
+    from . import actions_cfg
 
 
-class PMTGJointPositionAction(DifferentialInverseKinematicsAction):
-    pass
+class FourLegsPMTGAction(ActionTerm):
+    cfg: actions_cfg.FourLegsPMTGActionCfg
 
+    ik_action_cfgs: list[actions_cfg.DifferentialInverseKinematicsActionCfg]
+    """List of IK configurations for the four legs."""
 
-import numpy as np
+    def __init__(self, cfg: actions_cfg.FourLegsPMTGActionCfg, env: ManagerBasedEnv):
+        # initialize the action term
+        super().__init__(cfg, env)
+        self.ik_action_cfgs = cfg.ik_action_cfgs
+        self.ik_actions = [DifferentialInverseKinematicsAction(ik_cfg, env) for ik_cfg in self.ik_action_cfgs]
+
+    @property
+    def action_dim(self) -> int:
+        return self.cfg.action_dim
+
+    def process_actions(self, actions: torch.Tensor):
+        """16-D action space前4個是軌跡生成器參數, 後12個是關節位置殘差"""
+        trajectory_generators = [HybridFourDimTrajectoryGenerator(phase_offset=phase) for phase in self.cfg.phase_offsets]
+        for i, trajectory_generator in enumerate(trajectory_generators):
+            tg_args = torch.cat((actions[:4], actions[4 + i: 5 + i]))
+            foot_target_pos = trajectory_generator.generate(tg_args, self._env.physics_dt)
+            # TODO: IK
+
+    def apply_actions(self):
+        pass
 
 
 class HybridFourDimTrajectoryGenerator:
     """
     單條腿之混合控制軌跡生成器。
 
-    它接收一個 4 維的完整動作向量，4個維度分別是:
+    它接收一個 4 維的完整動作向量, 4個維度分別是:
 
     - 前進速度 (stance_vx)
     - 側向速度 (stance_vy)
@@ -32,11 +61,14 @@ class HybridFourDimTrajectoryGenerator:
 
     def __init__(self,
                  phase_offset: float = 0.0,
-                 leg_hip_position: np.ndarray | None = None,
+                 leg_hip_position: Sequence[float] | torch.Tensor | None = None,
                  # --- 可配置的內部參數 ---
                  base_frequency: float = 1.5,
                  velocity_to_freq_gain: float = 0.8,
-                 default_swing_duty_cycle: float = 0.5
+                 default_swing_duty_cycle: float = 0.5,
+                 device: torch.device | str | None = None,
+                 dtype: torch.dtype = torch.float32,
+                 eps: float = 1e-6,
                  ):
         """
         初始化單腿軌跡生成器。
@@ -48,84 +80,92 @@ class HybridFourDimTrajectoryGenerator:
             velocity_to_freq_gain (float): 速度轉換為額外步頻的增益。
             default_swing_duty_cycle (float): 固定的擺動相占空比。
         """
-        self.phase = float(phase_offset % 1.0)
+        self.device = torch.device(device) if device is not None else torch.device('cpu')
+        self.dtype = dtype
+        self.eps = eps
+
+        # 相位 (tensor 以方便未來批量 / device 一致性)
+        self.phase = torch.tensor(phase_offset % 1.0, device=self.device, dtype=self.dtype)
+
         if leg_hip_position is None:
-            self.leg_hip_position = np.zeros(3, dtype=float)
+            self.leg_hip_position = torch.zeros(3, device=self.device, dtype=self.dtype)
         else:
-            leg_hip_position = np.asarray(leg_hip_position, dtype=float)
-            assert leg_hip_position.shape == (3,), "leg_hip_position 必須是 shape (3,) 的向量"
-            self.leg_hip_position = leg_hip_position
+            self.leg_hip_position = torch.as_tensor(leg_hip_position, dtype=self.dtype, device=self.device)
+            assert self.leg_hip_position.shape == (3,), "leg_hip_position 必須是 shape (3,) 的向量"
 
-        self.base_frequency = base_frequency
-        self.velocity_to_freq_gain = velocity_to_freq_gain
-        self.default_swing_duty_cycle = default_swing_duty_cycle
+        # 內部可學 / 可調參數 (保留為 tensor 以利 autograd)
+        self.base_frequency = torch.as_tensor(base_frequency, dtype=self.dtype, device=self.device)
+        self.velocity_to_freq_gain = torch.as_tensor(velocity_to_freq_gain, dtype=self.dtype, device=self.device)
+        self.default_swing_duty_cycle = torch.as_tensor(default_swing_duty_cycle, dtype=self.dtype, device=self.device)
 
-        # **重要**: 定義用於生成軌跡的 4 個動作的鍵
-        self.TRAJECTORY_ACTION_KEYS = [
-            'stance_vx',
-            'stance_vy',
-            'yaw_rotation_rate',
-            'step_height'
-        ]
+    def _update_phase(self, frequency: torch.Tensor, dt: float | torch.Tensor):
+        """根據頻率與時間步長更新此腿相位 (tensor 版本)。"""
+        dt_t = torch.as_tensor(dt, dtype=self.dtype, device=self.device)
+        # 使用 fmod 保持在 [0,1)
+        self.phase = torch.fmod(self.phase + frequency * dt_t, 1.0)
 
-    def _update_phase(self, frequency: float, dt: float):
-        """根據頻率與時間步長更新此腿相位。"""
-        self.phase = (self.phase + frequency * dt) % 1.0
-
-    def generate(self, actions: dict, dt: float) -> np.ndarray:
+    def generate(self, actions: torch.Tensor, dt: float | torch.Tensor) -> torch.Tensor:
         """
         計算單腿足端目標 (x, y, z)。
 
         Args:
-            actions (dict): 來自 policy 的 4 維調變參數字典。
+            actions (torch.Tensor): 來自 policy 的 4 維調變參數張量。
             dt (float): 單步控制時間 (s)。
 
         Returns:
-            np.ndarray: shape (3,) -> [x, y, z]
+            torch.Tensor: shape (3,) -> [x, y, z]
         """
-        # --- 這部分的邏輯與之前的 4D 版本完全相同 ---
+        # 1. 讀取 4 維參數並裁剪 (支援 dict 或 torch.Tensor 長度=4)
+        assert actions.numel() == 4, "若為 Tensor 輸入，需為 shape (4,)"
+        stance_vx, stance_vy, yaw_rate, step_height = actions.to(self.device, self.dtype)
 
-        # 1. 讀取 4 維參數並裁剪
-        target_stance_vx = float(np.clip(actions['stance_vx'], -0.8, 0.8))
-        target_stance_vy = float(np.clip(actions['stance_vy'], -0.5, 0.5))
-        target_yaw_rate = float(np.clip(actions.get('yaw_rotation_rate', 0.0), -1.5, 1.5))
-        target_step_height = float(np.clip(actions['step_height'], 0.02, 0.15))
+        target_stance_vx = stance_vx.clamp(-0.8, 0.8)
+        target_stance_vy = stance_vy.clamp(-0.5, 0.5)
+        target_yaw_rate = yaw_rate.clamp(-1.5, 1.5)
+        target_step_height = step_height.clamp(0.02, 0.15)
 
         # 2. 自動推算步頻
-        linear_speed = np.sqrt(target_stance_vx**2 + target_stance_vy**2)
-        target_frequency = self.base_frequency + self.velocity_to_freq_gain * linear_speed
-        target_frequency = float(np.clip(target_frequency, 1.0, 4.0))
+        linear_speed = torch.sqrt(target_stance_vx**2 + target_stance_vy**2)
+        target_frequency = (self.base_frequency + self.velocity_to_freq_gain * linear_speed).clamp(1.0, 4.0)
 
         # 3. 使用固定的占空比
         target_swing_duty_cycle = self.default_swing_duty_cycle
         target_stance_duty_cycle = 1.0 - target_swing_duty_cycle
 
         # 4. 推導步幅
-        if target_frequency < 1e-6:
-            stance_duration = 0
-        else:
-            stance_duration = target_stance_duty_cycle / target_frequency
+        stance_duration = torch.where(
+            target_frequency < self.eps,
+            torch.zeros((), dtype=self.dtype, device=self.device),
+            target_stance_duty_cycle / target_frequency,
+        )
 
-        target_step_length_x = target_stance_vx * stance_duration
-        target_step_length_y = target_stance_vy * stance_duration
-        target_step_length_x = float(np.clip(target_step_length_x, -0.3, 0.3))
-        target_step_length_y = float(np.clip(target_step_length_y, -0.3, 0.3))
+        target_step_length_x = torch.clamp(target_stance_vx * stance_duration, -0.3, 0.3)
+        target_step_length_y = torch.clamp(target_stance_vy * stance_duration, -0.3, 0.3)
 
         # 5. 更新相位並計算軌跡
         self._update_phase(target_frequency, dt)
-        phase = self.phase
+        phase = self.phase.item()  # scalar float for control flow
 
-        if phase < target_swing_duty_cycle:
+        if phase < target_swing_duty_cycle.item():
             is_swing = True
-            phase_in_swing = phase / target_swing_duty_cycle
+            phase_in_swing = phase / target_swing_duty_cycle.item()
         else:
             is_swing = False
-            phase_in_stance = (phase - target_swing_duty_cycle) / target_stance_duty_cycle
+            phase_in_stance = (phase - target_swing_duty_cycle.item()) / target_stance_duty_cycle.item()
 
-        z = target_step_height * np.sin(np.pi * phase_in_swing) if is_swing else 0.0
+        z = (
+            target_step_height
+            * torch.sin(
+                torch.pi * torch.as_tensor(phase_in_swing, dtype=self.dtype, device=self.device)
+            )
+            if is_swing
+            else torch.zeros((), dtype=self.dtype, device=self.device)
+        )
 
         if is_swing:
-            swing_multiplier = -0.5 * np.cos(np.pi * phase_in_swing)
+            swing_multiplier = -0.5 * torch.cos(
+                torch.pi * torch.as_tensor(phase_in_swing, dtype=self.dtype, device=self.device)
+            )
             x = target_step_length_x * swing_multiplier
             y = target_step_length_y * swing_multiplier
         else:
@@ -133,17 +173,11 @@ class HybridFourDimTrajectoryGenerator:
             x = target_step_length_x * stance_multiplier
             y = target_step_length_y * stance_multiplier
 
-        if not is_swing and target_frequency > 1e-6:
+        if (not is_swing) and (target_frequency > self.eps):
             yaw_effect_x = -self.leg_hip_position[1] * target_yaw_rate / target_frequency
             yaw_effect_y = self.leg_hip_position[0] * target_yaw_rate / target_frequency
             scale = (1 - 2 * phase_in_stance)
-            x += yaw_effect_x * scale
-            y += yaw_effect_y * scale
+            x = x + yaw_effect_x * scale
+            y = y + yaw_effect_y * scale
 
-        return np.array([x, y, z], dtype=float)
-
-    def unpack_action_array_to_dict(self, action_array: np.ndarray) -> dict:
-        """
-        將Policy輸出的np.ndarray轉換為帶有鍵的字典。
-        """
-        return {key: value for key, value in zip(self.TRAJECTORY_ACTION_KEYS, action_array)}
+        return torch.stack([x, y, z])

@@ -320,11 +320,22 @@ class OperationalSpaceControllerActionCfg(ActionTermCfg):
 
 
 @configclass
-class PMTGJointPositionActionCfg(DifferentialInverseKinematicsActionCfg):
+class FourLegsPMTGActionCfg(ActionTermCfg):
     """Configuration for a PMTG-driven joint position action term.
 
     The policy outputs a gait schedule (gait_sched). The PMTG converts it to joint position targets
     as a time-varying trajectory at simulation rate.
     """
 
-    class_type: type[ActionTerm] = pmtg_actions.PMTGJointPositionAction
+    class_type: type[ActionTerm] = pmtg_actions.FourLegsPMTGAction
+
+    action_dim: int = 16
+    """The dimension of the action space. Defaults to 16 (4 for trajectory generator, 12 for joint angle residuals)."""
+
+    ik_action_cfgs: list[DifferentialInverseKinematicsActionCfg] = MISSING
+    """List of IK configurations for the four legs."""
+
+    phase_offsets: tuple[float, float, float, float] = (0.0, 0.5, 0.5, 0.0)  # LF, RF, LH, RH
+    """四條腿的相位偏移量, 以實現對角步態"""
+
+    leg_hip_positions: tuple[list[float], list[float], list[float], list[float]] | None = None
