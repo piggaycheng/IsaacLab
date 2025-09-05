@@ -128,7 +128,7 @@ class TrotTrajectoryGenerator:
 
         return np.array([x, y, z], dtype=float)
 
-    def _unpack_action_array_to_dict(self, action_array: np.ndarray) -> dict:
+    def unpack_action_array_to_dict(self, action_array: np.ndarray) -> dict:
         """
         將Policy輸出的np.ndarray轉換為帶有鍵的字典。
         """
