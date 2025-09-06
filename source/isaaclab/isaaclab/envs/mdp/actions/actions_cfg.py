@@ -338,4 +338,5 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     phase_offsets: tuple[float, float, float, float] = (0.0, 0.5, 0.5, 0.0)  # LF, RF, LH, RH
     """四條腿的相位偏移量, 以實現對角步態"""
 
-    leg_hip_positions: tuple[list[float], list[float], list[float], list[float]] | None = None
+    leg_hip_positions: tuple[list[float], list[float], list[float], list[float]] = MISSING  # LF, RF, LH, RH
+    """四條腿的髖關節相對於機身的位置, 用於計算轉向效果"""

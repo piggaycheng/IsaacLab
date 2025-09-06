@@ -36,7 +36,7 @@ class FourLegsPMTGAction(ActionTerm):
 
     def process_actions(self, actions: torch.Tensor):
         """16-D action space前4個是軌跡生成器參數, 後12個是關節位置殘差"""
-        trajectory_generators = [HybridFourDimTrajectoryGenerator(phase_offset=phase) for phase in self.cfg.phase_offsets]
+        trajectory_generators = [HybridFourDimTrajectoryGenerator(phase_offset=phase, leg_hip_position=leg_hip_position) for (phase, leg_hip_position) in zip(self.cfg.phase_offsets, self.cfg.leg_hip_positions)]
         for i, trajectory_generator in enumerate(trajectory_generators):
             tg_args = actions[:4]
             foot_target_pos = trajectory_generator.generate(tg_args, self._env.physics_dt)
