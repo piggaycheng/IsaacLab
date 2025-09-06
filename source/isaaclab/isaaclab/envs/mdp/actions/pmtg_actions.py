@@ -61,6 +61,9 @@ class FourLegsPMTGAction(ActionTerm):
         for term in self.ik_action_terms:
             term.apply_actions()
 
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        self._raw_actions[env_ids] = 0.0
+
 
 class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction):
     def __init__(self, cfg: actions_cfg.DifferentialInverseKinematicsActionCfg, env: ManagerBasedEnv):
