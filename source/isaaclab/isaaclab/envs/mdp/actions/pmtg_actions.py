@@ -27,12 +27,25 @@ class FourLegsPMTGAction(ActionTerm):
     def __init__(self, cfg: actions_cfg.FourLegsPMTGActionCfg, env: ManagerBasedEnv):
         # initialize the action term
         super().__init__(cfg, env)
+
+        # create tensors for raw and processed actions
+        self._raw_actions = torch.zeros(self.num_envs, self.action_dim, device=self.device)
+        self._processed_actions = torch.zeros_like(self.raw_actions)
+
         self.ik_action_cfgs = cfg.ik_action_cfgs
         self.ik_action_terms = [MyDifferentialInverseKinematicsAction(ik_cfg, env) for ik_cfg in self.ik_action_cfgs]
 
     @property
     def action_dim(self) -> int:
         return self.cfg.action_dim
+
+    @property
+    def raw_actions(self) -> torch.Tensor:
+        return self._raw_actions
+
+    @property
+    def processed_actions(self) -> torch.Tensor:
+        return self._processed_actions
 
     def process_actions(self, actions: torch.Tensor):
         """16-D action space前4個是軌跡生成器參數, 後12個是關節位置殘差"""
