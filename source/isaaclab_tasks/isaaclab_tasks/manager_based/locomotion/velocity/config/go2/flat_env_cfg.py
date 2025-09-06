@@ -50,29 +50,56 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
     def __post_init__(self) -> None:
         super().__post_init__()
 
-        self.actions.joint_pos = mdp.PMTGJointPositionActionCfg(
+        self.actions.joint_pos = mdp.FourLegsPMTGActionCfg(
             asset_name="robot",
-            joint_names=[".*"],
-            latent_dim=12,  # latent size
-            freq_hz=1.0,  # gait frequency (Hz)
-            amp_scale=1.0,
-            bias_scale=0.0,
-            phase_scale=3.14159265,
-            output_scale=0.5,  # overall joint target scale
-            use_default_offset=True,  # center around default joint pos
-            # enable residual: action = PMTG(latent,t) + residual
-            include_residual=True,
-            residual_scale=1.0,
-            residual_limit=0.35,  # optional clip of residuals per joint ([-limit, +limit])
-            phase_offset={
-                "FL.*": 0.0,
-                "FR.*": 3.14159265,
-                "RL.*": 3.14159265,
-                "RR.*": 0.0,
-            },
+            ik_action_cfgs=[
+                mdp.DifferentialInverseKinematicsActionCfg(
+                    asset_name="robot",
+                    joint_names=["FL_.*"],
+                    body_name="FL_foot",
+                    controller=mdp.DifferentialIKControllerCfg(
+                        command_type="position",
+                        ik_method="dls",
+                        use_relative_mode=True,
+                    ),
+                    scale=0.5,
+                ),
+                mdp.DifferentialInverseKinematicsActionCfg(
+                    asset_name="robot",
+                    joint_names=["FR_.*"],
+                    body_name="FR_foot",
+                    controller=mdp.DifferentialIKControllerCfg(
+                        command_type="position",
+                        ik_method="dls",
+                        use_relative_mode=True,
+                    ),
+                    scale=0.5,
+                ),
+                mdp.DifferentialInverseKinematicsActionCfg(
+                    asset_name="robot",
+                    joint_names=["RL_.*"],
+                    body_name="RL_foot",
+                    controller=mdp.DifferentialIKControllerCfg(
+                        command_type="position",
+                        ik_method="dls",
+                        use_relative_mode=True,
+                    ),
+                    scale=0.5,
+                ),
+                mdp.DifferentialInverseKinematicsActionCfg(
+                    asset_name="robot",
+                    joint_names=["RR_.*"],
+                    body_name="RR_foot",
+                    controller=mdp.DifferentialIKControllerCfg(
+                        command_type="position",
+                        ik_method="dls",
+                        use_relative_mode=True,
+                    ),
+                    scale=0.5,
+                ),
+            ],
+            leg_hip_positions=([0.1934, 0.0465, 0.0], [0.1934, -0.0465, 0.0], [-0.1934, 0.0465, 0.0], [-0.1934, -0.0465, 0.0]),  # FL, FR, RL, RR
         )
-
-        self.rewards.track_lin_vel_xy_exp.weight = 2.5
 
 
 @configclass
