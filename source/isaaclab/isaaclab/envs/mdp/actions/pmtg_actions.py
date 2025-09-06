@@ -8,6 +8,7 @@ from __future__ import annotations
 import torch
 from typing import TYPE_CHECKING, Sequence
 
+from isaaclab.controllers.differential_ik import DifferentialIKController
 from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
 from isaaclab.managers.action_manager import ActionTerm
 
@@ -27,7 +28,7 @@ class FourLegsPMTGAction(ActionTerm):
         # initialize the action term
         super().__init__(cfg, env)
         self.ik_action_cfgs = cfg.ik_action_cfgs
-        self.ik_actions = [DifferentialInverseKinematicsAction(ik_cfg, env) for ik_cfg in self.ik_action_cfgs]
+        self.ik_action_terms = [MyDifferentialInverseKinematicsAction(ik_cfg, env) for ik_cfg in self.ik_action_cfgs]
 
     @property
     def action_dim(self) -> int:
@@ -37,12 +38,42 @@ class FourLegsPMTGAction(ActionTerm):
         """16-D action space前4個是軌跡生成器參數, 後12個是關節位置殘差"""
         trajectory_generators = [HybridFourDimTrajectoryGenerator(phase_offset=phase) for phase in self.cfg.phase_offsets]
         for i, trajectory_generator in enumerate(trajectory_generators):
-            tg_args = torch.cat((actions[:4], actions[4 + i: 5 + i]))
+            tg_args = actions[:4]
             foot_target_pos = trajectory_generator.generate(tg_args, self._env.physics_dt)
-            # TODO: IK
+            self.ik_action_terms[i].process_actions(foot_target_pos)
+            self.ik_action_terms[i].set_residuals(actions[4 + i * 3: 7 + i * 3])
 
     def apply_actions(self):
-        pass
+        for term in self.ik_action_terms:
+            term.apply_actions()
+
+
+class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction):
+    def __init__(self, cfg: actions_cfg.DifferentialInverseKinematicsActionCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+
+    @property
+    def ik_controller(self) -> DifferentialIKController:
+        return self._ik_controller
+
+    def apply_actions(self):
+        ee_pos_curr, ee_quat_curr = self._compute_frame_pose()
+        joint_pos = self._asset.data.joint_pos[:, self._joint_ids]
+        # compute the delta in joint-space
+        if ee_quat_curr.norm() != 0:
+            jacobian = self._compute_frame_jacobian()
+            joint_pos_des = self._ik_controller.compute(ee_pos_curr, ee_quat_curr, jacobian, joint_pos)
+        else:
+            joint_pos_des = joint_pos.clone()
+
+        if self._residuals is not None:
+            joint_pos_des += self._residuals
+
+        # apply the desired joint positions
+        self._asset.set_joint_position_target(joint_pos_des, self._joint_ids)
+
+    def set_residuals(self, residuals: torch.Tensor):
+        self._residuals = residuals
 
 
 class HybridFourDimTrajectoryGenerator:
