@@ -54,6 +54,7 @@ from isaaclab.utils.math import subtract_frame_transforms
 # Pre-defined configs
 ##
 from isaaclab_assets import UNITREE_GO2_CFG
+from isaaclab.actuators import DCMotorCfg
 
 
 @configclass
@@ -64,7 +65,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     ground = AssetBaseCfg(
         prim_path="/World/defaultGroundPlane",
         spawn=sim_utils.GroundPlaneCfg(),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -0.5)),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
     )
 
     # lights
@@ -73,7 +74,17 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     )
 
     # articulation
-    robot = UNITREE_GO2_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    robot = UNITREE_GO2_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot", actuators={
+        "base_legs": DCMotorCfg(
+            joint_names_expr=[".*_hip_joint", ".*_thigh_joint", ".*_calf_joint"],
+            effort_limit=23.5,
+            saturation_effort=23.5,
+            velocity_limit=30.0,
+            stiffness=55.0,
+            damping=0.5,
+            friction=0.0,
+        ),
+    },)
 
 
 def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
@@ -84,7 +95,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
     # Create controller
     diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=True, ik_method="dls")
-    diff_ik_controller = DifferentialIKController(diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
+    fl_diff_ik_controller = DifferentialIKController(diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
+    fr_diff_ik_controller = DifferentialIKController(diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
 
     # Markers
     frame_marker_cfg = FRAME_MARKER_CFG.copy()
@@ -94,64 +106,91 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
     # Define goals for the arm
     ee_goals = [
-        [0.1934, 0.142, -0.426],
+        [0.05, 0.0, 0.0],
+        [-0.05, 0.0, 0.0],
     ]
     ee_goals = torch.tensor(ee_goals, device=sim.device)
     # Track the given command
     current_goal_idx = 0
     # Create buffers to store actions
-    ik_commands = torch.zeros(scene.num_envs, diff_ik_controller.action_dim, device=robot.device)
+    ik_commands = torch.zeros(scene.num_envs, fl_diff_ik_controller.action_dim, device=robot.device)
     ik_commands[:] = ee_goals[current_goal_idx]
 
     # Specify robot-specific parameters
-    robot_entity_cfg = SceneEntityCfg("robot", joint_names=["FL_.*"], body_names=["FL_foot"])
+    fl_robot_entity_cfg = SceneEntityCfg("robot", joint_names=["FL_.*"], body_names=["FL_foot"])
+    fr_robot_entity_cfg = SceneEntityCfg("robot", joint_names=["FR_.*"], body_names=["FR_foot"])
+    rl_robot_entity_cfg = SceneEntityCfg("robot", joint_names=["RL_.*"], body_names=["RL_foot"])
+    rr_robot_entity_cfg = SceneEntityCfg("robot", joint_names=["RR_.*"], body_names=["RR_foot"])
+
     # Resolving the scene entities
-    robot_entity_cfg.resolve(scene)
+    fl_robot_entity_cfg.resolve(scene)
+    fr_robot_entity_cfg.resolve(scene)
+    rl_robot_entity_cfg.resolve(scene)
+    rr_robot_entity_cfg.resolve(scene)
     # Obtain the frame index of the end-effector
     # For a fixed base robot, the frame index is one less than the body index. This is because
     # the root body is not included in the returned Jacobians.
     if robot.is_fixed_base:
-        ee_jacobi_idx = robot_entity_cfg.body_ids[0] - 1
+        fl_ee_jacobi_idx = fl_robot_entity_cfg.body_ids[0] - 1
+        fr_ee_jacobi_idx = fr_robot_entity_cfg.body_ids[0] - 1
+        rl_ee_jacobi_idx = rl_robot_entity_cfg.body_ids[0] - 1
+        rr_ee_jacobi_idx = rr_robot_entity_cfg.body_ids[0] - 1
     else:
-        ee_jacobi_idx = robot_entity_cfg.body_ids[0]
+        fl_ee_jacobi_idx = fl_robot_entity_cfg.body_ids[0]
+        fr_ee_jacobi_idx = fr_robot_entity_cfg.body_ids[0]
+        rl_ee_jacobi_idx = rl_robot_entity_cfg.body_ids[0]
+        rr_ee_jacobi_idx = rr_robot_entity_cfg.body_ids[0]
 
     # Define simulation stepping
     sim_dt = sim.get_physics_dt()
     count = 0
+
+    joint_pos = robot.data.default_joint_pos.clone()
+    joint_vel = robot.data.default_joint_vel.clone()
+    robot.write_joint_state_to_sim(joint_pos, joint_vel)
+
     # Simulation loop
     while simulation_app.is_running():
-        ee_pose_w = robot.data.body_pose_w[:, robot_entity_cfg.body_ids[0]]
-        root_pose_w = robot.data.root_pose_w
+        fl_ee_pose_w = robot.data.body_pose_w[:, fl_robot_entity_cfg.body_ids[0]]
+        fl_root_pose_w = robot.data.root_pose_w
         # compute frame in root frame
-        ee_pos_b, ee_quat_b = subtract_frame_transforms(
-            root_pose_w[:, 0:3], root_pose_w[:, 3:7], ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
+        fl_ee_pos_b, fl_ee_quat_b = subtract_frame_transforms(
+            fl_root_pose_w[:, 0:3], fl_root_pose_w[:, 3:7], fl_ee_pose_w[:, 0:3], fl_ee_pose_w[:, 3:7]
         )
-        # reset
+
+        fr_ee_pose_w = robot.data.body_pose_w[:, fr_robot_entity_cfg.body_ids[0]]
+        fr_root_pose_w = robot.data.root_pose_w
+        # compute frame in root frame
+        fr_ee_pos_b, fr_ee_quat_b = subtract_frame_transforms(
+            fr_root_pose_w[:, 0:3], fr_root_pose_w[:, 3:7], fr_ee_pose_w[:, 0:3], fr_ee_pose_w[:, 3:7]
+        )
+
         if count % 150 == 0:
-            # reset time
-            count = 0
-            # reset joint state
-            joint_pos = robot.data.default_joint_pos.clone()
-            joint_vel = robot.data.default_joint_vel.clone()
-            robot.write_joint_state_to_sim(joint_pos, joint_vel)
-            robot.reset()
-            # reset actions
             ik_commands[:] = ee_goals[current_goal_idx]
-            joint_pos_des = joint_pos[:, robot_entity_cfg.joint_ids].clone()
-            # reset controller
-            diff_ik_controller.reset()
-            diff_ik_controller.set_command(ik_commands, ee_pos_b, ee_quat_b)
-            # change goal
+            fl_diff_ik_controller.reset()
+            fr_diff_ik_controller.reset()
+
+            count = 0
             current_goal_idx = (current_goal_idx + 1) % len(ee_goals)
-        else:
-            # obtain quantities from simulation
-            jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
-            joint_pos = robot.data.joint_pos[:, robot_entity_cfg.joint_ids]
-            # compute the joint commands
-            joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
+
+        fl_jacobian = robot.root_physx_view.get_jacobians()[:, fl_ee_jacobi_idx, :, fl_robot_entity_cfg.joint_ids]
+        fr_jacobian = robot.root_physx_view.get_jacobians()[:, fr_ee_jacobi_idx, :, fr_robot_entity_cfg.joint_ids]
+
+        fl_joint_pos = joint_pos[:, fl_robot_entity_cfg.joint_ids].clone()
+        fr_joint_pos = joint_pos[:, fr_robot_entity_cfg.joint_ids].clone()
+        fl_diff_ik_controller.set_command(ik_commands, fl_ee_pos_b, fl_ee_quat_b)
+        fr_diff_ik_controller.set_command(ik_commands, fr_ee_pos_b, fr_ee_quat_b)
+        fl_joint_pos_des = fl_diff_ik_controller.compute(fl_ee_pos_b, fl_ee_quat_b, fl_jacobian, fl_joint_pos)
+        fr_joint_pos_des = fr_diff_ik_controller.compute(fr_ee_pos_b, fr_ee_quat_b, fr_jacobian, fr_joint_pos)
+
+        rl_joint_pos_des = joint_pos[:, rl_robot_entity_cfg.joint_ids].clone()
+        rr_joint_pos_des = joint_pos[:, rr_robot_entity_cfg.joint_ids].clone()
 
         # apply actions
-        robot.set_joint_position_target(joint_pos_des, joint_ids=robot_entity_cfg.joint_ids)
+        robot.set_joint_position_target(fl_joint_pos_des, joint_ids=fl_robot_entity_cfg.joint_ids)
+        robot.set_joint_position_target(fr_joint_pos_des, joint_ids=fr_robot_entity_cfg.joint_ids)
+        robot.set_joint_position_target(rl_joint_pos_des, joint_ids=rl_robot_entity_cfg.joint_ids)
+        robot.set_joint_position_target(rr_joint_pos_des, joint_ids=rr_robot_entity_cfg.joint_ids)
         scene.write_data_to_sim()
         # perform step
         sim.step()
@@ -161,14 +200,14 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         scene.update(sim_dt)
 
         # obtain quantities from simulation
-        ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
+        # ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         # update marker positions
         # ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
         # Visualize goal marker at target position with identity quaternion orientation
-        goal_marker.visualize(
-            ik_commands[:, :3] + scene.env_origins,
-            torch.tensor([1.0, 0.0, 0.0, 0.0], device=ik_commands.device).expand(ik_commands.shape[0], 4)
-        )
+        # goal_marker.visualize(
+        #     ik_commands[:, :3] + scene.env_origins,
+        #     torch.tensor([1.0, 0.0, 0.0, 0.0], device=ik_commands.device).expand(ik_commands.shape[0], 4)
+        # )
 
 
 def main():
