@@ -50,12 +50,24 @@ class FourLegsPMTGAction(ActionTerm):
         return self._processed_actions
 
     def process_actions(self, actions: torch.Tensor):
-        """16-D action space前4個是軌跡生成器參數, 後12個是關節位置殘差"""
-        for i, trajectory_generator in enumerate(self.trajectory_generators):
-            tg_args = actions[:4]
-            foot_target_pos = trajectory_generator.generate(tg_args, self._env.physics_dt)
-            self.ik_action_terms[i].process_actions(foot_target_pos)
-            self.ik_action_terms[i].set_residuals(actions[4 + i * 3: 7 + i * 3])
+        """16-D action space: first 4 are for trajectory generator, last 12 are joint position residuals."""
+        # The first 4 actions are shared trajectory generator parameters
+        tg_args = actions[:, :4]
+
+        # Generate foot target positions for all legs
+        # The result is a list of tensors, where each tensor is for a leg.
+        foot_target_positions = [
+            trajectory_generator.generate(tg_args, self._env.physics_dt)
+            for trajectory_generator in self.trajectory_generators
+        ]
+
+        # Process actions for each leg
+        for i, ik_term in enumerate(self.ik_action_terms):
+            # Set the foot target position for the current leg
+            ik_term.process_actions(foot_target_positions[i])
+            # Set the residual for the current leg's joints
+            residual = actions[:, 4 + i * 3 : 7 + i * 3]
+            ik_term.set_residuals(residual)
 
     def apply_actions(self):
         for term in self.ik_action_terms:
@@ -95,9 +107,9 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
 
 class HybridFourDimTrajectoryGenerator:
     """
-    單條腿之混合控制軌跡生成器。
+    單條腿之混合控制軌跡生成器 (批次處理版本)。
 
-    它接收一個 4 維的完整動作向量, 4個維度分別是:
+    它接收一個 2 維的完整動作張量, shape 為 (batch_size, 4), 4個維度分別是:
 
     - 前進速度 (stance_vx)
     - 側向速度 (stance_vy)
@@ -132,7 +144,7 @@ class HybridFourDimTrajectoryGenerator:
         self.dtype = dtype
         self.eps = eps
 
-        # 相位 (tensor 以方便未來批量 / device 一致性)
+        # 相位 (初始化為 scalar tensor, 會在 generate 中根據 batch_size 自動擴展)
         self.phase = torch.tensor(phase_offset % 1.0, device=self.device, dtype=self.dtype)
 
         if leg_hip_position is None:
@@ -141,31 +153,38 @@ class HybridFourDimTrajectoryGenerator:
             self.leg_hip_position = torch.as_tensor(leg_hip_position, dtype=self.dtype, device=self.device)
             assert self.leg_hip_position.shape == (3,), "leg_hip_position 必須是 shape (3,) 的向量"
 
-        # 內部可學 / 可調參數 (保留為 tensor 以利 autograd)
+        # 內部可學 / 可調參數
         self.base_frequency = torch.as_tensor(base_frequency, dtype=self.dtype, device=self.device)
         self.velocity_to_freq_gain = torch.as_tensor(velocity_to_freq_gain, dtype=self.dtype, device=self.device)
         self.default_swing_duty_cycle = torch.as_tensor(default_swing_duty_cycle, dtype=self.dtype, device=self.device)
 
     def _update_phase(self, frequency: torch.Tensor, dt: float | torch.Tensor):
-        """根據頻率與時間步長更新此腿相位 (tensor 版本)。"""
+        """根據頻率與時間步長更新此腿相位 (支援批次處理)。"""
         dt_t = torch.as_tensor(dt, dtype=self.dtype, device=self.device)
         # 使用 fmod 保持在 [0,1)
         self.phase = torch.fmod(self.phase + frequency * dt_t, 1.0)
 
     def generate(self, actions: torch.Tensor, dt: float | torch.Tensor) -> torch.Tensor:
         """
-        計算單腿足端目標 (x, y, z)。
+        計算單腿足端目標 (x, y, z)，支援批次處理。
 
         Args:
-            actions (torch.Tensor): 來自 policy 的 4 維調變參數張量。
-            dt (float): 單步控制時間 (s)。
+            actions (torch.Tensor): 來自 policy 的調變參數張量, shape (batch_size, 4)。
+            dt (float or torch.Tensor): 單步控制時間 (s)。可以是 scalar 或 shape (batch_size,)。
 
         Returns:
-            torch.Tensor: shape (3,) -> [x, y, z]
+            torch.Tensor: 目標足端位置, shape (batch_size, 3) -> [[x1, y1, z1], [x2, y2, z2], ...]
         """
-        # 1. 讀取 4 維參數並裁剪 (支援 dict 或 torch.Tensor 長度=4)
-        assert actions.numel() == 4, "若為 Tensor 輸入，需為 shape (4,)"
-        stance_vx, stance_vy, yaw_rate, step_height = actions.to(self.device, self.dtype)
+        batch_size = actions.shape[0]
+
+        # 檢查並在必要時擴展 self.phase 以匹配 batch_size
+        if self.phase.numel() != batch_size:
+            # 使用第一個元素的值進行擴展，以保持一致的初始相位
+            self.phase = self.phase.expand(batch_size).clone()
+
+        # 1. 讀取 4 維參數並裁剪 (從 N,4 張量中分離)
+        actions_on_device = actions.to(self.device, self.dtype)
+        stance_vx, stance_vy, yaw_rate, step_height = torch.unbind(actions_on_device, dim=1)
 
         target_stance_vx = stance_vx.clamp(-0.8, 0.8)
         target_stance_vy = stance_vy.clamp(-0.5, 0.5)
@@ -181,9 +200,10 @@ class HybridFourDimTrajectoryGenerator:
         target_stance_duty_cycle = 1.0 - target_swing_duty_cycle
 
         # 4. 推導步幅
+        # 避免除以零
         stance_duration = torch.where(
             target_frequency < self.eps,
-            torch.zeros((), dtype=self.dtype, device=self.device),
+            torch.zeros_like(target_frequency),
             target_stance_duty_cycle / target_frequency,
         )
 
@@ -192,40 +212,42 @@ class HybridFourDimTrajectoryGenerator:
 
         # 5. 更新相位並計算軌跡
         self._update_phase(target_frequency, dt)
-        phase = self.phase.item()  # scalar float for control flow
 
-        if phase < target_swing_duty_cycle.item():
-            is_swing = True
-            phase_in_swing = phase / target_swing_duty_cycle.item()
-        else:
-            is_swing = False
-            phase_in_stance = (phase - target_swing_duty_cycle.item()) / target_stance_duty_cycle.item()
+        # --- 使用 torch.where 取代 if/else 邏輯 ---
+        is_swing = self.phase < target_swing_duty_cycle
 
-        z = (
-            target_step_height
-            * torch.sin(
-                torch.pi * torch.as_tensor(phase_in_swing, dtype=self.dtype, device=self.device)
-            )
-            if is_swing
-            else torch.zeros((), dtype=self.dtype, device=self.device)
-        )
+        # 為 is_swing=True 和 is_swing=False 兩種情況都計算 phase
+        phase_in_swing = self.phase / target_swing_duty_cycle
+        phase_in_stance = (self.phase - target_swing_duty_cycle) / target_stance_duty_cycle
 
-        if is_swing:
-            swing_multiplier = -0.5 * torch.cos(
-                torch.pi * torch.as_tensor(phase_in_swing, dtype=self.dtype, device=self.device)
-            )
-            x = target_step_length_x * swing_multiplier
-            y = target_step_length_y * swing_multiplier
-        else:
-            stance_multiplier = 0.5 * (1 - 2 * phase_in_stance)
-            x = target_step_length_x * stance_multiplier
-            y = target_step_length_y * stance_multiplier
+        # --- Z 軸軌跡 ---
+        z_swing = target_step_height * torch.sin(torch.pi * phase_in_swing)
+        z_stance = torch.zeros_like(z_swing)
+        z = torch.where(is_swing, z_swing, z_stance)
 
-        if (not is_swing) and (target_frequency > self.eps):
-            yaw_effect_x = -self.leg_hip_position[1] * target_yaw_rate / target_frequency
-            yaw_effect_y = self.leg_hip_position[0] * target_yaw_rate / target_frequency
-            scale = (1 - 2 * phase_in_stance)
-            x = x + yaw_effect_x * scale
-            y = y + yaw_effect_y * scale
+        # --- X, Y 軸軌跡 (不含 yaw) ---
+        swing_multiplier = -0.5 * torch.cos(torch.pi * phase_in_swing)
+        x_swing = target_step_length_x * swing_multiplier
+        y_swing = target_step_length_y * swing_multiplier
 
-        return torch.stack([x, y, z])
+        stance_multiplier = 0.5 * (1 - 2 * phase_in_stance)
+        x_stance = target_step_length_x * stance_multiplier
+        y_stance = target_step_length_y * stance_multiplier
+
+        x = torch.where(is_swing, x_swing, x_stance)
+        y = torch.where(is_swing, y_swing, y_stance)
+
+        # --- Yaw 效應 (僅在支撐相且頻率不為零時加入) ---
+        apply_yaw_effect = (~is_swing) & (target_frequency > self.eps)
+
+        # 預先計算 yaw 效應 (broadcasting 會自動處理)
+        yaw_effect_x = -self.leg_hip_position[1] * target_yaw_rate / target_frequency
+        yaw_effect_y = self.leg_hip_position[0] * target_yaw_rate / target_frequency
+        scale = (1 - 2 * phase_in_stance)
+
+        # 僅在滿足條件時增加 yaw 效應
+        x = torch.where(apply_yaw_effect, x + yaw_effect_x * scale, x)
+        y = torch.where(apply_yaw_effect, y + yaw_effect_y * scale, y)
+
+        # 將 x, y, z 組合成 (batch_size, 3) 的張量
+        return torch.stack([x, y, z], dim=1)
