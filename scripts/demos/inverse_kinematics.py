@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from typing import Dict, Any
+import numpy as np
 
 from isaacsim import SimulationApp  # type: ignore  # (Runtime provided by Isaac Sim environment)
 
@@ -67,7 +68,7 @@ class RobotController:
 
         # Perform IK each physics step
         target_pos, target_orn = self.target.get_world_pose()
-        action, success = self.ik_solver.compute_inverse_kinematics(target_pos)
+        action, success = self.ik_solver.compute_inverse_kinematics(target_pos, np.array([1, 0, 0, 0]))
         if success:
             # Apply returned joint position command vector
             self.robot.apply_action(action)
@@ -119,8 +120,8 @@ def main():
 
     # Kinematics configuration (paths kept as provided by user environment)
     kinematics_config = KinematicsConfig(
-        robot_description_path="C:/Users/yucheng/Documents/code/MyIsaacLab/source/isaaclab_tasks/isaaclab_tasks/manager_based/locomotion/velocity/config/go2/robot_description/go2_robot_description.yaml",
-        urdf_path="C:/Users/yucheng/Documents/code/MyIsaacLab/source/isaaclab_tasks/isaaclab_tasks/manager_based/locomotion/velocity/config/go2/robot_description/go2_description.urdf",
+        robot_description_path="D:/Users/yucheng/Documents/MyIsaacLab/source/isaaclab_tasks/isaaclab_tasks/manager_based/locomotion/velocity/config/go2/robot_description/go2_robot_description.yaml",
+        urdf_path="D:/Users/yucheng/Documents/MyIsaacLab/source/isaaclab_tasks/isaaclab_tasks/manager_based/locomotion/velocity/config/go2/robot_description/go2_description.urdf",
         end_effector_name="FL_foot",
     )
 
