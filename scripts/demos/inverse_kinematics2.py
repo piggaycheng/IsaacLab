@@ -94,9 +94,10 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     robot = scene["robot"]
 
     # Create controller
-    diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=True, ik_method="dls")
-    fl_diff_ik_controller = DifferentialIKController(diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
-    fr_diff_ik_controller = DifferentialIKController(diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
+    fl_diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=True, ik_method="dls")
+    fr_diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=True, ik_method="dls")
+    fl_diff_ik_controller = DifferentialIKController(fl_diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
+    fr_diff_ik_controller = DifferentialIKController(fr_diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
 
     # Markers
     frame_marker_cfg = FRAME_MARKER_CFG.copy()
@@ -106,14 +107,14 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
     # Define goals for the arm
     ee_goals = [
-        [0.05, 0.0, 0.0],
-        [-0.05, 0.0, 0.0],
+        [0.0, 0.0, 0.01],
+        [0.0, 0.0, -0.01],
     ]
     ee_goals = torch.tensor(ee_goals, device=sim.device)
     # Track the given command
     current_goal_idx = 0
     # Create buffers to store actions
-    ik_commands = torch.zeros(scene.num_envs, fl_diff_ik_controller.action_dim, device=robot.device)
+    ik_commands = torch.zeros(scene.num_envs, fr_diff_ik_controller.action_dim, device=robot.device)
     ik_commands[:] = ee_goals[current_goal_idx]
 
     # Specify robot-specific parameters
@@ -173,11 +174,14 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             count = 0
             current_goal_idx = (current_goal_idx + 1) % len(ee_goals)
 
-        fl_jacobian = robot.root_physx_view.get_jacobians()[:, fl_ee_jacobi_idx, :, fl_robot_entity_cfg.joint_ids]
-        fr_jacobian = robot.root_physx_view.get_jacobians()[:, fr_ee_jacobi_idx, :, fr_robot_entity_cfg.joint_ids]
+        full_jacobian = robot.root_physx_view.get_jacobians()
+        fl_jacobian = full_jacobian[:, fl_ee_jacobi_idx, :, fl_robot_entity_cfg.joint_ids]
+        fr_jacobian = full_jacobian[:, fr_ee_jacobi_idx, :, fr_robot_entity_cfg.joint_ids]
 
-        fl_joint_pos = joint_pos[:, fl_robot_entity_cfg.joint_ids].clone()
-        fr_joint_pos = joint_pos[:, fr_robot_entity_cfg.joint_ids].clone()
+        fl_joint_pos = robot.data.joint_pos[:, fl_robot_entity_cfg.joint_ids]
+        fr_joint_pos = robot.data.joint_pos[:, fr_robot_entity_cfg.joint_ids]
+        # fl_joint_pos = joint_pos[:, fl_robot_entity_cfg.joint_ids].clone()
+        # fr_joint_pos = joint_pos[:, fr_robot_entity_cfg.joint_ids].clone()
         fl_diff_ik_controller.set_command(ik_commands, fl_ee_pos_b, fl_ee_quat_b)
         fr_diff_ik_controller.set_command(ik_commands, fr_ee_pos_b, fr_ee_quat_b)
         fl_joint_pos_des = fl_diff_ik_controller.compute(fl_ee_pos_b, fl_ee_quat_b, fl_jacobian, fl_joint_pos)
