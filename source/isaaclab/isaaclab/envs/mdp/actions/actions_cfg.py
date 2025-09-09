@@ -367,3 +367,6 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     """四條腿的Y軸預設偏移量, 用於計算Y軸位置"""
 
     trajectory_generator_params: TrajectoryGeneratorCfg = TrajectoryGeneratorCfg()
+
+    action_smoothing_alpha: float = 1.0
+    """動作平滑的alpha值, 用於控制動作變化的平滑度"""

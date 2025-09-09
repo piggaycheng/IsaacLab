@@ -67,8 +67,12 @@ class FourLegsPMTGAction(ActionTerm):
 
     def process_actions(self, actions: torch.Tensor):
         """16-D action space: first 4 are for trajectory generator, last 12 are joint position residuals."""
+
+        # apply action smoothing
+        self._raw_actions[:] = actions
+        self._processed_actions = self.cfg.action_smoothing_alpha * actions + (1 - self.cfg.action_smoothing_alpha) * self.processed_actions
         # The first 4 actions are shared trajectory generator parameters
-        tg_args = actions[:, :4]
+        tg_args = self.processed_actions[:, :4]
         # # FIXME: For debug only, fix the step height to a constant value, others are zero
         # tg_args[:, 0] = 0.0  # 前進速度
         # tg_args[:, 1] = 0.0  # 側向速度
@@ -87,7 +91,7 @@ class FourLegsPMTGAction(ActionTerm):
             # Set the foot target position for the current leg
             ik_term.process_actions(foot_target_positions[i])
             # Set the residual for the current leg's joints
-            residual = actions[:, 4 + i * 3 : 7 + i * 3]
+            residual = self.processed_actions[:, 4 + i * 3 : 7 + i * 3]
             ik_term.set_residuals(residual)
 
     def apply_actions(self):
@@ -96,6 +100,7 @@ class FourLegsPMTGAction(ActionTerm):
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         self._raw_actions[env_ids] = 0.0
+        self._processed_actions[env_ids] = 0.0
 
 
 class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction):
