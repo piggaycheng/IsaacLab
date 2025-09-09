@@ -327,6 +327,19 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     as a time-varying trajectory at simulation rate.
     """
 
+    @configclass
+    class TrajectoryGeneratorCfg:
+        """Configuration for the trajectory generator used in PMTG."""
+
+        stance_vx_scale: float = 0.8
+        """Scale factor for the forward velocity command. Defaults to 0.8."""
+        stance_vy_scale: float = 0.5
+        """Scale factor for the lateral velocity command. Defaults to 0.5."""
+        yaw_rate_scale: float = 1.5
+        """Scale factor for the yaw rate command. Defaults to 1.5."""
+        step_height_scale: float = 0.13
+        """Scale factor for the step height command. Defaults to 0.13."""
+
     class_type: type[ActionTerm] = pmtg_actions.FourLegsPMTGAction
 
     action_dim: int = 16
@@ -344,8 +357,13 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     gain: float = 1.0
     """增益因子, 用於apply_action效果的強度"""
 
+    residuals_scale: float = 0.1
+    """關節位置殘差的縮放因子, 用於微調PMTG生成的關節位置"""
+
     foot_default_heights: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
     """預設的腳部高度, 用於計算Z軸位置"""
 
     leg_y_offsets: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
     """四條腿的Y軸預設偏移量, 用於計算Y軸位置"""
+
+    trajectory_generator_params: TrajectoryGeneratorCfg = TrajectoryGeneratorCfg()

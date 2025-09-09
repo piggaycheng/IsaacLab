@@ -36,13 +36,15 @@ class FourLegsPMTGAction(ActionTerm):
         self.ik_action_terms = [MyDifferentialInverseKinematicsAction(ik_cfg, env) for ik_cfg in self.ik_action_cfgs]
         for term in self.ik_action_terms:
             term.set_gain(self.cfg.gain)
+            term.set_residuals_scale(self.cfg.residuals_scale)
 
         self.trajectory_generators = [
             HybridFourDimTrajectoryGenerator(
+                trajectory_generator_params=self.cfg.trajectory_generator_params,
                 phase_offset=phase,
                 leg_hip_position=leg_hip_position,
                 default_foot_height=foot_default_height,
-                default_y_offset=leg_y_offset
+                default_y_offset=leg_y_offset,
             ) for (phase, leg_hip_position, foot_default_height, leg_y_offset) in zip(
                 self.cfg.phase_offsets,
                 self.cfg.leg_hip_positions,
@@ -117,7 +119,7 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
             joint_pos_des = joint_pos.clone()
 
         if self._residuals is not None:
-            joint_pos_des += self._residuals
+            joint_pos_des += self._residuals * self._residuals_scale
 
         # apply the desired joint positions
         self._asset.set_joint_position_target(joint_pos_des, self._joint_ids)
@@ -127,6 +129,9 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
 
     def set_gain(self, gain: float):
         self._gain = gain
+
+    def set_residuals_scale(self, scale: float):
+        self._residuals_scale = scale
 
 
 class HybridFourDimTrajectoryGenerator:
@@ -144,6 +149,7 @@ class HybridFourDimTrajectoryGenerator:
     """
 
     def __init__(self,
+                 trajectory_generator_params: actions_cfg.FourLegsPMTGActionCfg.TrajectoryGeneratorCfg,
                  phase_offset: float = 0.0,
                  leg_hip_position: Sequence[float] | torch.Tensor | None = None,
                  default_foot_height: float = 0.0,
@@ -171,6 +177,7 @@ class HybridFourDimTrajectoryGenerator:
         self.eps = eps
         self.default_foot_height = torch.as_tensor(default_foot_height, dtype=self.dtype, device=self.device)
         self.default_y_offset = torch.as_tensor(default_y_offset, dtype=self.dtype, device=self.device)
+        self.trajectory_generator_params = trajectory_generator_params
 
         # 相位 (初始化為 scalar tensor, 會在 generate 中根據 batch_size 自動擴展)
         self.phase = torch.tensor(phase_offset % 1.0, device=self.device, dtype=self.dtype)
@@ -214,10 +221,10 @@ class HybridFourDimTrajectoryGenerator:
         actions_on_device = actions.to(self.device, self.dtype)
         stance_vx, stance_vy, yaw_rate, step_height = torch.unbind(actions_on_device, dim=1)
 
-        target_stance_vx = stance_vx.clamp(-0.8, 0.8)
-        target_stance_vy = stance_vy.clamp(-0.5, 0.5)
-        target_yaw_rate = yaw_rate.clamp(-1.5, 1.5)
-        target_step_height = step_height.clamp(0.02, 0.15)
+        target_stance_vx = (stance_vx * self.trajectory_generator_params.stance_vx_scale).clamp(-0.8, 0.8)
+        target_stance_vy = (stance_vy * self.trajectory_generator_params.stance_vy_scale).clamp(-0.5, 0.5)
+        target_yaw_rate = (yaw_rate * self.trajectory_generator_params.yaw_rate_scale).clamp(-1.5, 1.5)
+        target_step_height = (step_height * self.trajectory_generator_params.step_height_scale).clamp(0.02, 0.15)
 
         # 2. 自動推算步頻
         linear_speed = torch.sqrt(target_stance_vx**2 + target_stance_vy**2)
