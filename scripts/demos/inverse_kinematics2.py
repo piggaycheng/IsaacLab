@@ -56,6 +56,7 @@ from isaaclab.utils.math import subtract_frame_transforms
 from isaaclab_assets import UNITREE_GO2_CFG
 from isaaclab.actuators import DCMotorCfg
 from isaaclab.assets.articulation import ArticulationCfg
+from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 
 
 @configclass
@@ -77,6 +78,25 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     # articulation
     robot = UNITREE_GO2_CFG.replace(
         prim_path="{ENV_REGEX_NS}/Robot",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/Go2/go2.usd",
+            activate_contact_sensors=True,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                retain_accelerations=False,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_linear_velocity=1000.0,
+                max_angular_velocity=1000.0,
+                max_depenetration_velocity=1.0,
+            ),
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                enabled_self_collisions=False,
+                solver_position_iteration_count=4,
+                solver_velocity_iteration_count=0,
+                fix_root_link=True,
+            ),
+        ),
         actuators={
             "base_legs": DCMotorCfg(
                 joint_names_expr=[".*_hip_joint", ".*_thigh_joint", ".*_calf_joint"],
@@ -89,7 +109,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
             )
         },
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(0.0, 0.0, 0.1),
+            pos=(0.0, 0.0, 0.5),
             joint_pos={
                 ".*L_hip_joint": 0.1,
                 ".*R_hip_joint": -0.1,
@@ -98,7 +118,6 @@ class TableTopSceneCfg(InteractiveSceneCfg):
                 ".*_calf_joint": -1.5,
             },
             joint_vel={".*": 0.0},
-            rot=(0.0, 1.0, 0.0, 0.0)
         ),
     )
 
@@ -110,25 +129,27 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     robot = scene["robot"]
 
     # Create controller
-    fl_diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=True, ik_method="dls")
-    fr_diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=True, ik_method="dls")
-    rl_diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=True, ik_method="dls")
-    rr_diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=True, ik_method="dls")
+    fl_diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=False, ik_method="dls")
+    fr_diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=False, ik_method="dls")
+    rl_diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=False, ik_method="dls")
+    rr_diff_ik_cfg = DifferentialIKControllerCfg(command_type="position", use_relative_mode=False, ik_method="dls")
     fl_diff_ik_controller = DifferentialIKController(fl_diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
     fr_diff_ik_controller = DifferentialIKController(fr_diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
     rl_diff_ik_controller = DifferentialIKController(rl_diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
     rr_diff_ik_controller = DifferentialIKController(rr_diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
 
-    # Markers
-    frame_marker_cfg = FRAME_MARKER_CFG.copy()
-    frame_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
-    ee_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_current"))
-    goal_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_goal"))
+    # # Markers
+    # frame_marker_cfg = FRAME_MARKER_CFG.copy()
+    # frame_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+    # ee_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_current"))
+    # goal_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_goal"))
 
     # Define goals for the arm
     ee_goals = [
-        [0.0, 0.05, 0.0],
-        [0.0, -0.05, 0.0],
+        [0.2, 0.05, -0.2],
+        [0.2, -0.05, -0.2],
+        [-0.2, -0.05, -0.2],
+        [-0.2, 0.05, -0.2],
     ]
     ee_goals = torch.tensor(ee_goals, device=sim.device)
     # Track the given command
@@ -200,6 +221,12 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
         if count % 150 == 0:
             ik_commands[:] = ee_goals[current_goal_idx]
+
+            fl_diff_ik_controller.set_command(ik_commands, fl_ee_pos_b, fl_ee_quat_b)
+            fr_diff_ik_controller.set_command(ik_commands, fr_ee_pos_b, fr_ee_quat_b)
+            rl_diff_ik_controller.set_command(ik_commands, rl_ee_pos_b, rl_ee_quat_b)
+            rr_diff_ik_controller.set_command(ik_commands, rr_ee_pos_b, rr_ee_quat_b)
+
             fl_diff_ik_controller.reset()
             fr_diff_ik_controller.reset()
             rl_diff_ik_controller.reset()
@@ -218,11 +245,6 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         fr_joint_pos = robot.data.joint_pos[:, fr_robot_entity_cfg.joint_ids]
         rl_joint_pos = robot.data.joint_pos[:, rl_robot_entity_cfg.joint_ids]
         rr_joint_pos = robot.data.joint_pos[:, rr_robot_entity_cfg.joint_ids]
-
-        fl_diff_ik_controller.set_command(ik_commands, fl_ee_pos_b, fl_ee_quat_b)
-        fr_diff_ik_controller.set_command(ik_commands, fr_ee_pos_b, fr_ee_quat_b)
-        rl_diff_ik_controller.set_command(ik_commands, rl_ee_pos_b, rl_ee_quat_b)
-        rr_diff_ik_controller.set_command(ik_commands, rr_ee_pos_b, rr_ee_quat_b)
 
         fl_joint_pos_des = fl_diff_ik_controller.compute(fl_ee_pos_b, fl_ee_quat_b, fl_jacobian, fl_joint_pos)
         fr_joint_pos_des = fr_diff_ik_controller.compute(fr_ee_pos_b, fr_ee_quat_b, fr_jacobian, fr_joint_pos)
