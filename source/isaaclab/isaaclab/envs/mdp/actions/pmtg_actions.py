@@ -45,11 +45,13 @@ class FourLegsPMTGAction(ActionTerm):
                 leg_hip_position=leg_hip_position,
                 default_foot_height=foot_default_height,
                 default_y_offset=leg_y_offset,
-            ) for (phase, leg_hip_position, foot_default_height, leg_y_offset) in zip(
+                default_x_offset=leg_x_offset,
+            ) for (phase, leg_hip_position, foot_default_height, leg_y_offset, leg_x_offset) in zip(
                 self.cfg.phase_offsets,
                 self.cfg.leg_hip_positions,
                 self.cfg.foot_default_heights,
-                self.cfg.leg_y_offsets
+                self.cfg.leg_y_offsets,
+                self.cfg.leg_x_offsets,
             )
         ]
 
@@ -159,6 +161,7 @@ class HybridFourDimTrajectoryGenerator:
                  leg_hip_position: Sequence[float] | torch.Tensor | None = None,
                  default_foot_height: float = 0.0,
                  default_y_offset: float = 0.0,
+                 default_x_offset: float = 0.0,
                  # --- 可配置的內部參數 ---
                  base_frequency: float = 1.5,
                  velocity_to_freq_gain: float = 0.8,
@@ -182,6 +185,7 @@ class HybridFourDimTrajectoryGenerator:
         self.eps = eps
         self.default_foot_height = torch.as_tensor(default_foot_height, dtype=self.dtype, device=self.device)
         self.default_y_offset = torch.as_tensor(default_y_offset, dtype=self.dtype, device=self.device)
+        self.default_x_offset = torch.as_tensor(default_x_offset, dtype=self.dtype, device=self.device)
         self.trajectory_generator_params = trajectory_generator_params
 
         # 相位 (初始化為 scalar tensor, 會在 generate 中根據 batch_size 自動擴展)
@@ -229,7 +233,7 @@ class HybridFourDimTrajectoryGenerator:
         target_stance_vx = (stance_vx * self.trajectory_generator_params.stance_vx_scale).clamp(-0.8, 0.8)
         target_stance_vy = (stance_vy * self.trajectory_generator_params.stance_vy_scale).clamp(-0.5, 0.5)
         target_yaw_rate = (yaw_rate * self.trajectory_generator_params.yaw_rate_scale).clamp(-1.5, 1.5)
-        target_step_height = (step_height * self.trajectory_generator_params.step_height_scale).clamp(0.02, 0.15)
+        target_step_height = (step_height * self.trajectory_generator_params.step_height_scale).clamp(0.02, 0.2)
 
         # 2. 自動推算步頻
         linear_speed = torch.sqrt(target_stance_vx**2 + target_stance_vy**2)
@@ -279,7 +283,7 @@ class HybridFourDimTrajectoryGenerator:
         x_motion = torch.where(is_swing, x_swing, x_stance)
         y_motion = torch.where(is_swing, y_swing, y_stance)
 
-        x = x_motion  # X軸通常沒有預設偏移
+        x = self.default_x_offset + x_motion
         y = self.default_y_offset + y_motion
 
         # --- Yaw 效應 (僅在支撐相且頻率不為零時加入) ---

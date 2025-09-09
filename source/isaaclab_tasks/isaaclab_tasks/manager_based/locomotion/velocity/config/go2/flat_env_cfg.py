@@ -96,9 +96,10 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
             ],
             leg_hip_positions=([0.1934, 0.0465, 0.0], [0.1934, -0.0465, 0.0], [-0.1934, 0.0465, 0.0], [-0.1934, -0.0465, 0.0]),  # FL, FR, RL, RR
             gain=1.0,
-            residuals_scale=0.05,
-            foot_default_heights=(-0.3, -0.3, -0.35, -0.35),
+            residuals_scale=0.01,
+            foot_default_heights=(-0.25, -0.25, -0.25, -0.25),
             leg_y_offsets=(0.1, -0.1, 0.1, -0.1),
+            action_smoothing_alpha=0.8,
         )
 
 

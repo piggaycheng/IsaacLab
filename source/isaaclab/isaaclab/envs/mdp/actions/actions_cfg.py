@@ -337,8 +337,8 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
         """Scale factor for the lateral velocity command. Defaults to 0.5."""
         yaw_rate_scale: float = 1.5
         """Scale factor for the yaw rate command. Defaults to 1.5."""
-        step_height_scale: float = 0.13
-        """Scale factor for the step height command. Defaults to 0.13."""
+        step_height_scale: float = 0.18
+        """Scale factor for the step height command. Defaults to 0.18."""
 
     class_type: type[ActionTerm] = pmtg_actions.FourLegsPMTGAction
 
@@ -365,6 +365,9 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
 
     leg_y_offsets: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
     """四條腿的Y軸預設偏移量, 用於計算Y軸位置"""
+
+    leg_x_offsets: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
+    """四條腿的X軸預設偏移量, 用於計算X軸位置"""
 
     trajectory_generator_params: TrajectoryGeneratorCfg = TrajectoryGeneratorCfg()
 
