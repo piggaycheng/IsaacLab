@@ -34,6 +34,8 @@ class FourLegsPMTGAction(ActionTerm):
 
         self.ik_action_cfgs = cfg.ik_action_cfgs
         self.ik_action_terms = [MyDifferentialInverseKinematicsAction(ik_cfg, env) for ik_cfg in self.ik_action_cfgs]
+        for term in self.ik_action_terms:
+            term.set_gain(self.cfg.gain)
 
         self.trajectory_generators = [HybridFourDimTrajectoryGenerator(phase_offset=phase, leg_hip_position=leg_hip_position) for (phase, leg_hip_position) in zip(self.cfg.phase_offsets, self.cfg.leg_hip_positions)]
 
@@ -91,7 +93,9 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
         # compute the delta in joint-space
         if ee_quat_curr.norm() != 0:
             jacobian = self._compute_frame_jacobian()
-            joint_pos_des = self._ik_controller.compute(ee_pos_curr, ee_quat_curr, jacobian, joint_pos)
+            joint_pos_des_full_step = self._ik_controller.compute(ee_pos_curr, ee_quat_curr, jacobian, joint_pos)
+            delta_joint_pos = joint_pos_des_full_step - joint_pos
+            joint_pos_des = joint_pos + self._gain * delta_joint_pos
         else:
             joint_pos_des = joint_pos.clone()
 
@@ -103,6 +107,9 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
 
     def set_residuals(self, residuals: torch.Tensor):
         self._residuals = residuals
+
+    def set_gain(self, gain: float):
+        self._gain = gain
 
 
 class HybridFourDimTrajectoryGenerator:
@@ -250,4 +257,6 @@ class HybridFourDimTrajectoryGenerator:
         y = torch.where(apply_yaw_effect, y + yaw_effect_y * scale, y)
 
         # 將 x, y, z 組合成 (batch_size, 3) 的張量
-        return torch.stack([x, y, z], dim=1)
+        foot_pos_rel_hip = torch.stack([x, y, z], dim=1)
+        # 加上髖關節在基座標系下的位置，得到相對於基座標系的足端位置
+        return foot_pos_rel_hip + self.leg_hip_position

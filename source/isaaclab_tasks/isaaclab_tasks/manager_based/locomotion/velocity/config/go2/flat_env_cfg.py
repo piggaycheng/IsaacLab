@@ -60,9 +60,8 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
                     controller=mdp.DifferentialIKControllerCfg(
                         command_type="position",
                         ik_method="dls",
-                        use_relative_mode=True,
+                        use_relative_mode=False,
                     ),
-                    scale=0.5,
                 ),
                 mdp.DifferentialInverseKinematicsActionCfg(
                     asset_name="robot",
@@ -71,9 +70,8 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
                     controller=mdp.DifferentialIKControllerCfg(
                         command_type="position",
                         ik_method="dls",
-                        use_relative_mode=True,
+                        use_relative_mode=False,
                     ),
-                    scale=0.5,
                 ),
                 mdp.DifferentialInverseKinematicsActionCfg(
                     asset_name="robot",
@@ -82,9 +80,8 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
                     controller=mdp.DifferentialIKControllerCfg(
                         command_type="position",
                         ik_method="dls",
-                        use_relative_mode=True,
+                        use_relative_mode=False,
                     ),
-                    scale=0.5,
                 ),
                 mdp.DifferentialInverseKinematicsActionCfg(
                     asset_name="robot",
@@ -93,12 +90,12 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
                     controller=mdp.DifferentialIKControllerCfg(
                         command_type="position",
                         ik_method="dls",
-                        use_relative_mode=True,
+                        use_relative_mode=False,
                     ),
-                    scale=0.5,
                 ),
             ],
             leg_hip_positions=([0.1934, 0.0465, 0.0], [0.1934, -0.0465, 0.0], [-0.1934, 0.0465, 0.0], [-0.1934, -0.0465, 0.0]),  # FL, FR, RL, RR
+            # gain=0.2,
         )
 
 

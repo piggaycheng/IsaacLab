@@ -340,3 +340,6 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
 
     leg_hip_positions: tuple[list[float], list[float], list[float], list[float]] = MISSING  # LF, RF, LH, RH
     """四條腿的髖關節相對於機身的位置, 用於計算轉向效果"""
+
+    gain: float = 1.0
+    """增益因子, 用於apply_action效果的強度"""
