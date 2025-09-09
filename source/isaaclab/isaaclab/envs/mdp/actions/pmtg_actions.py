@@ -256,7 +256,7 @@ class HybridFourDimTrajectoryGenerator:
         phase_in_stance = (self.phase - target_swing_duty_cycle) / target_stance_duty_cycle
 
         # --- Z 軸軌跡 ---
-        z_swing_offset = target_step_height * torch.sin(torch.pi * phase_in_swing)
+        z_swing_offset = 0.5 * target_step_height * (1 - torch.cos(2 * torch.pi * phase_in_swing))
         z_stance_offset = torch.zeros_like(z_swing_offset)
         z_offset = torch.where(is_swing, z_swing_offset, z_stance_offset)
         # 最終 Z 軸位置 = 預設高度 + 位移
