@@ -37,7 +37,19 @@ class FourLegsPMTGAction(ActionTerm):
         for term in self.ik_action_terms:
             term.set_gain(self.cfg.gain)
 
-        self.trajectory_generators = [HybridFourDimTrajectoryGenerator(phase_offset=phase, leg_hip_position=leg_hip_position) for (phase, leg_hip_position) in zip(self.cfg.phase_offsets, self.cfg.leg_hip_positions)]
+        self.trajectory_generators = [
+            HybridFourDimTrajectoryGenerator(
+                phase_offset=phase,
+                leg_hip_position=leg_hip_position,
+                default_foot_height=foot_default_height,
+                default_y_offset=leg_y_offset
+            ) for (phase, leg_hip_position, foot_default_height, leg_y_offset) in zip(
+                self.cfg.phase_offsets,
+                self.cfg.leg_hip_positions,
+                self.cfg.foot_default_heights,
+                self.cfg.leg_y_offsets
+            )
+        ]
 
     @property
     def action_dim(self) -> int:
@@ -55,6 +67,11 @@ class FourLegsPMTGAction(ActionTerm):
         """16-D action space: first 4 are for trajectory generator, last 12 are joint position residuals."""
         # The first 4 actions are shared trajectory generator parameters
         tg_args = actions[:, :4]
+        # # FIXME: For debug only, fix the step height to a constant value, others are zero
+        # tg_args[:, 0] = 0.0  # 前進速度
+        # tg_args[:, 1] = 0.0  # 側向速度
+        # tg_args[:, 2] = 0.0  # 轉向角速度
+        # tg_args[:, 3] = 0.2  # 固定抬腿高度為 0.1 m
 
         # Generate foot target positions for all legs
         # The result is a list of tensors, where each tensor is for a leg.
@@ -129,6 +146,8 @@ class HybridFourDimTrajectoryGenerator:
     def __init__(self,
                  phase_offset: float = 0.0,
                  leg_hip_position: Sequence[float] | torch.Tensor | None = None,
+                 default_foot_height: float = 0.0,
+                 default_y_offset: float = 0.0,
                  # --- 可配置的內部參數 ---
                  base_frequency: float = 1.5,
                  velocity_to_freq_gain: float = 0.8,
@@ -150,6 +169,8 @@ class HybridFourDimTrajectoryGenerator:
         self.device = torch.device(device) if device is not None else torch.device('cpu')
         self.dtype = dtype
         self.eps = eps
+        self.default_foot_height = torch.as_tensor(default_foot_height, dtype=self.dtype, device=self.device)
+        self.default_y_offset = torch.as_tensor(default_y_offset, dtype=self.dtype, device=self.device)
 
         # 相位 (初始化為 scalar tensor, 會在 generate 中根據 batch_size 自動擴展)
         self.phase = torch.tensor(phase_offset % 1.0, device=self.device, dtype=self.dtype)
@@ -228,9 +249,11 @@ class HybridFourDimTrajectoryGenerator:
         phase_in_stance = (self.phase - target_swing_duty_cycle) / target_stance_duty_cycle
 
         # --- Z 軸軌跡 ---
-        z_swing = target_step_height * torch.sin(torch.pi * phase_in_swing)
-        z_stance = torch.zeros_like(z_swing)
-        z = torch.where(is_swing, z_swing, z_stance)
+        z_swing_offset = target_step_height * torch.sin(torch.pi * phase_in_swing)
+        z_stance_offset = torch.zeros_like(z_swing_offset)
+        z_offset = torch.where(is_swing, z_swing_offset, z_stance_offset)
+        # 最終 Z 軸位置 = 預設高度 + 位移
+        z = self.default_foot_height + z_offset
 
         # --- X, Y 軸軌跡 (不含 yaw) ---
         swing_multiplier = -0.5 * torch.cos(torch.pi * phase_in_swing)
@@ -241,8 +264,11 @@ class HybridFourDimTrajectoryGenerator:
         x_stance = target_step_length_x * stance_multiplier
         y_stance = target_step_length_y * stance_multiplier
 
-        x = torch.where(is_swing, x_swing, x_stance)
-        y = torch.where(is_swing, y_swing, y_stance)
+        x_motion = torch.where(is_swing, x_swing, x_stance)
+        y_motion = torch.where(is_swing, y_swing, y_stance)
+
+        x = x_motion  # X軸通常沒有預設偏移
+        y = self.default_y_offset + y_motion
 
         # --- Yaw 效應 (僅在支撐相且頻率不為零時加入) ---
         apply_yaw_effect = (~is_swing) & (target_frequency > self.eps)

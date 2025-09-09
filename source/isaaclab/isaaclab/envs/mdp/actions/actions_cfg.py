@@ -335,11 +335,17 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     ik_action_cfgs: list[DifferentialInverseKinematicsActionCfg] = MISSING
     """List of IK configurations for the four legs."""
 
-    phase_offsets: tuple[float, float, float, float] = (0.0, 0.5, 0.5, 0.0)  # LF, RF, LH, RH
+    phase_offsets: tuple[float, float, float, float] = (0.0, 0.5, 0.5, 0.0)  # LF, RF, RL, RR
     """四條腿的相位偏移量, 以實現對角步態"""
 
-    leg_hip_positions: tuple[list[float], list[float], list[float], list[float]] = MISSING  # LF, RF, LH, RH
+    leg_hip_positions: tuple[list[float], list[float], list[float], list[float]] = MISSING  # LF, RF, RL, RR
     """四條腿的髖關節相對於機身的位置, 用於計算轉向效果"""
 
     gain: float = 1.0
     """增益因子, 用於apply_action效果的強度"""
+
+    foot_default_heights: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
+    """預設的腳部高度, 用於計算Z軸位置"""
+
+    leg_y_offsets: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
+    """四條腿的Y軸預設偏移量, 用於計算Y軸位置"""
