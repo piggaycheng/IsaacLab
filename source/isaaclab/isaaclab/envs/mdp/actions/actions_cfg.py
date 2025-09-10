@@ -331,14 +331,14 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     class TrajectoryGeneratorCfg:
         """Configuration for the trajectory generator used in PMTG."""
 
-        stance_vx_scale: float = 0.8
-        """Scale factor for the forward velocity command. Defaults to 0.8."""
-        stance_vy_scale: float = 0.5
-        """Scale factor for the lateral velocity command. Defaults to 0.5."""
-        yaw_rate_scale: float = 1.5
-        """Scale factor for the yaw rate command. Defaults to 1.5."""
-        step_height_scale: float = 0.13
-        """Scale factor for the step height command. Defaults to 0.13."""
+        stance_vx_scale: float = 1.0
+        """Scale factor for the forward velocity command. Defaults to 1.0."""
+        stance_vy_scale: float = 1.0
+        """Scale factor for the lateral velocity command. Defaults to 1.0."""
+        yaw_rate_scale: float = 1.0
+        """Scale factor for the yaw rate command. Defaults to 1.0."""
+        step_height_scale: float = 1.0
+        """Scale factor for the step height command. Defaults to 1.0."""
 
     class_type: type[ActionTerm] = pmtg_actions.FourLegsPMTGAction
 

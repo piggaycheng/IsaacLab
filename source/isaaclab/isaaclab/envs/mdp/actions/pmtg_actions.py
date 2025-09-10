@@ -70,15 +70,15 @@ class FourLegsPMTGAction(ActionTerm):
         # The first 4 actions are shared trajectory generator parameters
         tg_args = actions[:, :4]
         # # FIXME: For debug only, fix the step height to a constant value, others are zero
-        # tg_args[:, 0] = 0.0  # 前進速度
-        # tg_args[:, 1] = 0.0  # 側向速度
-        # tg_args[:, 2] = 0.0  # 轉向角速度
-        # tg_args[:, 3] = 0.2  # 固定抬腿高度為 0.1 m
+        tg_args[:, 0] = 0.0  # 前進速度
+        tg_args[:, 1] = 0.0  # 側向速度
+        tg_args[:, 2] = 0.0  # 轉向角速度
+        tg_args[:, 3] = 0.1  # 固定抬腿高度為 0.1 m
 
         # Generate foot target positions for all legs
         # The result is a list of tensors, where each tensor is for a leg.
         foot_target_positions = [
-            trajectory_generator.generate(tg_args, self._env.physics_dt)
+            trajectory_generator.generate(tg_args, self._env.step_dt)
             for trajectory_generator in self.trajectory_generators
         ]
 
@@ -224,7 +224,7 @@ class HybridFourDimTrajectoryGenerator:
         target_stance_vx = (stance_vx * self.trajectory_generator_params.stance_vx_scale).clamp(-0.8, 0.8)
         target_stance_vy = (stance_vy * self.trajectory_generator_params.stance_vy_scale).clamp(-0.5, 0.5)
         target_yaw_rate = (yaw_rate * self.trajectory_generator_params.yaw_rate_scale).clamp(-1.5, 1.5)
-        target_step_height = (step_height * self.trajectory_generator_params.step_height_scale).clamp(0.02, 0.15)
+        target_step_height = (step_height * self.trajectory_generator_params.step_height_scale).clamp(0.02, 0.2)
 
         # 2. 自動推算步頻
         linear_speed = torch.sqrt(target_stance_vx**2 + target_stance_vy**2)
