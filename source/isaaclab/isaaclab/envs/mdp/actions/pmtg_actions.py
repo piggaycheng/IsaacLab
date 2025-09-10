@@ -75,11 +75,11 @@ class FourLegsPMTGAction(ActionTerm):
         self._processed_actions = self.cfg.action_smoothing_alpha * actions + (1 - self.cfg.action_smoothing_alpha) * self.processed_actions
         # The first 4 actions are shared trajectory generator parameters
         tg_args = self.processed_actions[:, :4]
-        # # FIXME: For debug only, fix the step height to a constant value, others are zero
-        tg_args[:, 0] = 0.0  # 前進速度
-        tg_args[:, 1] = 0.0  # 側向速度
-        tg_args[:, 2] = 0.0  # 轉向角速度
-        tg_args[:, 3] = 0.1  # 固定抬腿高度為 0.1 m
+        # # # FIXME: For debug only, fix the step height to a constant value, others are zero
+        # tg_args[:, 0] = 0.0  # 前進速度
+        # tg_args[:, 1] = 0.0  # 側向速度
+        # tg_args[:, 2] = 0.0  # 轉向角速度
+        # tg_args[:, 3] = 0.15  # 固定抬腿高度為 0.1 m
 
         # Generate foot target positions for all legs
         # The result is a list of tensors, where each tensor is for a leg.
@@ -90,11 +90,11 @@ class FourLegsPMTGAction(ActionTerm):
 
         # Process actions for each leg
         for i, ik_term in enumerate(self.ik_action_terms):
-            # Set the foot target position for the current leg
-            ik_term.process_actions(foot_target_positions[i])
             # Set the residual for the current leg's joints
             residual = self.processed_actions[:, 4 + i * 3 : 7 + i * 3]
             ik_term.set_residuals(residual)
+            # Set the foot target position for the current leg
+            ik_term.process_actions(foot_target_positions[i])
 
     def apply_actions(self):
         for term in self.ik_action_terms:
@@ -113,7 +113,9 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
     def ik_controller(self) -> DifferentialIKController:
         return self._ik_controller
 
-    def apply_actions(self):
+    def process_actions(self, actions: torch.Tensor):
+        super().process_actions(actions)
+
         ee_pos_curr, ee_quat_curr = self._compute_frame_pose()
         joint_pos = self._asset.data.joint_pos[:, self._joint_ids]
         # compute the delta in joint-space
@@ -128,8 +130,11 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
         if self._residuals is not None:
             joint_pos_des += self._residuals * self._residuals_scale
 
+        self._joint_pos_des = joint_pos_des
+
+    def apply_actions(self):
         # apply the desired joint positions
-        self._asset.set_joint_position_target(joint_pos_des, self._joint_ids)
+        self._asset.set_joint_position_target(self._joint_pos_des, self._joint_ids)
 
     def set_residuals(self, residuals: torch.Tensor):
         self._residuals = residuals
