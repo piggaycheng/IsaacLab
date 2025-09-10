@@ -76,15 +76,15 @@ class FourLegsPMTGAction(ActionTerm):
         # The first 4 actions are shared trajectory generator parameters
         tg_args = self.processed_actions[:, :4]
         # # FIXME: For debug only, fix the step height to a constant value, others are zero
-        # tg_args[:, 0] = 0.0  # 前進速度
-        # tg_args[:, 1] = 0.0  # 側向速度
-        # tg_args[:, 2] = 0.0  # 轉向角速度
-        # tg_args[:, 3] = 0.2  # 固定抬腿高度為 0.1 m
+        tg_args[:, 0] = 0.0  # 前進速度
+        tg_args[:, 1] = 0.0  # 側向速度
+        tg_args[:, 2] = 0.0  # 轉向角速度
+        tg_args[:, 3] = 0.1  # 固定抬腿高度為 0.1 m
 
         # Generate foot target positions for all legs
         # The result is a list of tensors, where each tensor is for a leg.
         foot_target_positions = [
-            trajectory_generator.generate(tg_args, self._env.physics_dt)
+            trajectory_generator.generate(tg_args, self._env.step_dt)
             for trajectory_generator in self.trajectory_generators
         ]
 

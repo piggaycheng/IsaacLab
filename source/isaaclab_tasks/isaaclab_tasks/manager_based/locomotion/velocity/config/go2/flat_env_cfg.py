@@ -50,6 +50,9 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
     def __post_init__(self) -> None:
         super().__post_init__()
 
+        self.scene.robot.actuators['base_legs'].stiffness = 50.0
+        self.scene.robot.actuators['base_legs'].damping = 2.0
+
         self.actions.joint_pos = mdp.FourLegsPMTGActionCfg(
             asset_name="robot",
             ik_action_cfgs=[
@@ -96,8 +99,8 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
             ],
             leg_hip_positions=([0.1934, 0.0465, 0.0], [0.1934, -0.0465, 0.0], [-0.1934, 0.0465, 0.0], [-0.1934, -0.0465, 0.0]),  # FL, FR, RL, RR
             gain=1.0,
-            residuals_scale=0.01,
-            foot_default_heights=(-0.25, -0.25, -0.25, -0.25),
+            residuals_scale=0.0,
+            foot_default_heights=(-0.28, -0.28, -0.3, -0.3),
             leg_y_offsets=(0.1, -0.1, 0.1, -0.1),
             action_smoothing_alpha=0.8,
         )
