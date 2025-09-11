@@ -73,7 +73,7 @@ class FourLegsPMTGAction(ActionTerm):
         # 將每個phase轉換成sin及cos形式
         phases_sin = torch.sin(2 * torch.pi * self._phases)
         phases_cos = torch.cos(2 * torch.pi * self._phases)
-        phase_sin_cos =  torch.stack([phases_sin, phases_cos], dim=-1)
+        phase_sin_cos = torch.stack([phases_sin, phases_cos], dim=-1)
         return phase_sin_cos.flatten(start_dim=1)  # shape (num_envs, 8)
 
     def process_actions(self, actions: torch.Tensor):
@@ -306,8 +306,15 @@ class HybridFourDimTrajectoryGenerator:
         apply_yaw_effect = (~is_swing) & (target_frequency > self.eps)
 
         # 預先計算 yaw 效應 (broadcasting 會自動處理)
-        yaw_effect_x = -self.leg_hip_position[1] * target_yaw_rate / target_frequency
-        yaw_effect_y = self.leg_hip_position[0] * target_yaw_rate / target_frequency
+        # 修正：將位移計算與 stance_duration 關聯，以符合物理模型
+        # scale 因子 (1 - 2 * phase_in_stance) 會將位移從 +effect 掃描到 -effect，
+        # 總位移是 effect 的兩倍。因此 effect 應為總位移的一半。
+        total_displacement_yaw_x = -self.leg_hip_position[1] * target_yaw_rate * stance_duration
+        total_displacement_yaw_y = self.leg_hip_position[0] * target_yaw_rate * stance_duration
+
+        yaw_effect_x = 0.5 * total_displacement_yaw_x
+        yaw_effect_y = 0.5 * total_displacement_yaw_y
+
         scale = (1 - 2 * phase_in_stance)
 
         # 僅在滿足條件時增加 yaw 效應
