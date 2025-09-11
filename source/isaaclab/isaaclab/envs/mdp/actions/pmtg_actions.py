@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import torch
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Sequence, Tuple
 
 from isaaclab.controllers.differential_ik import DifferentialIKController
 from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
@@ -31,6 +31,7 @@ class FourLegsPMTGAction(ActionTerm):
         # create tensors for raw and processed actions
         self._raw_actions = torch.zeros(self.num_envs, self.action_dim, device=self.device)
         self._processed_actions = torch.zeros_like(self.raw_actions)
+        self._phases = torch.zeros(self.num_envs, 4, device=self.device)  # phase for each leg
 
         self.ik_action_cfgs = cfg.ik_action_cfgs
         self.ik_action_terms = [MyDifferentialInverseKinematicsAction(ik_cfg, env) for ik_cfg in self.ik_action_cfgs]
@@ -67,6 +68,10 @@ class FourLegsPMTGAction(ActionTerm):
     def processed_actions(self) -> torch.Tensor:
         return self._processed_actions
 
+    @property
+    def phases(self) -> torch.Tensor:
+        return self._phases
+
     def process_actions(self, actions: torch.Tensor):
         """16-D action space: first 4 are for trajectory generator, last 12 are joint position residuals."""
 
@@ -75,7 +80,7 @@ class FourLegsPMTGAction(ActionTerm):
         self._processed_actions = self.cfg.action_smoothing_alpha * actions + (1 - self.cfg.action_smoothing_alpha) * self.processed_actions
         # The first 4 actions are shared trajectory generator parameters
         tg_args = self.processed_actions[:, :4]
-        # # # FIXME: For debug only, fix the step height to a constant value, others are zero
+        # # FIXME: For debug only, fix the step height to a constant value, others are zero
         # tg_args[:, 0] = 0.0  # 前進速度
         # tg_args[:, 1] = 0.0  # 側向速度
         # tg_args[:, 2] = 0.0  # 轉向角速度
@@ -83,10 +88,12 @@ class FourLegsPMTGAction(ActionTerm):
 
         # Generate foot target positions for all legs
         # The result is a list of tensors, where each tensor is for a leg.
-        foot_target_positions = [
-            trajectory_generator.generate(tg_args, self._env.step_dt)
-            for trajectory_generator in self.trajectory_generators
-        ]
+        foot_target_positions = []
+        for trajectory_generator_idx, trajectory_generator in enumerate(self.trajectory_generators):
+            foot_target_position, phase = trajectory_generator.generate(tg_args, self._env.step_dt)
+            foot_target_positions.append(foot_target_position)
+            # Save the phase for each leg
+            self._phases[:, trajectory_generator_idx] = phase
 
         # Process actions for each leg
         for i, ik_term in enumerate(self.ik_action_terms):
@@ -213,7 +220,7 @@ class HybridFourDimTrajectoryGenerator:
         # 使用 fmod 保持在 [0,1)
         self.phase = torch.fmod(self.phase + frequency * dt_t, 1.0)
 
-    def generate(self, actions: torch.Tensor, dt: float | torch.Tensor) -> torch.Tensor:
+    def generate(self, actions: torch.Tensor, dt: float | torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         計算單腿足端目標 (x, y, z)，支援批次處理。
 
@@ -306,4 +313,5 @@ class HybridFourDimTrajectoryGenerator:
         # 將 x, y, z 組合成 (batch_size, 3) 的張量
         foot_pos_rel_hip = torch.stack([x, y, z], dim=1)
         # 加上髖關節在基座標系下的位置，得到相對於基座標系的足端位置
-        return foot_pos_rel_hip + self.leg_hip_position
+        # 回傳足端位置以及相位，提供給觀測空間
+        return (foot_pos_rel_hip + self.leg_hip_position, self.phase)
