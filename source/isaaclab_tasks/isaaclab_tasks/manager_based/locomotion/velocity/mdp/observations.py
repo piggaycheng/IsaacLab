@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import torch
 from typing import TYPE_CHECKING, cast
+from isaaclab.envs.mdp.actions.pmtg_actions import FourLegsPMTGAction
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
-    from isaaclab.envs.mdp.actions.pmtg_actions import FourLegsPMTGAction
 
 
 def trajectory_generator_phase(env: ManagerBasedRLEnv, action_name: str) -> torch.Tensor:

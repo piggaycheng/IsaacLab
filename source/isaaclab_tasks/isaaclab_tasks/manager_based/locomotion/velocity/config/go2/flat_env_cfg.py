@@ -6,6 +6,8 @@
 from isaaclab.utils import configclass
 
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
+from isaaclab_tasks.manager_based.locomotion.velocity.mdp.observations import trajectory_generator_phase
+from isaaclab.managers import ObservationTermCfg as ObsTerm
 
 from .rough_env_cfg import UnitreeGo2RoughEnvCfg
 
@@ -108,6 +110,13 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
 
         self.rewards.track_lin_vel_xy_exp.weight = 2.5
         self.rewards.dof_pos_limits.weight = -2.0
+
+        self.observations.policy.pmtg_phase = ObsTerm(
+            func=trajectory_generator_phase,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
 
 
 @configclass

@@ -73,7 +73,8 @@ class FourLegsPMTGAction(ActionTerm):
         # 將每個phase轉換成sin及cos形式
         phases_sin = torch.sin(2 * torch.pi * self._phases)
         phases_cos = torch.cos(2 * torch.pi * self._phases)
-        return torch.cat([phases_sin, phases_cos], dim=-1)
+        phase_sin_cos =  torch.stack([phases_sin, phases_cos], dim=-1)
+        return phase_sin_cos.flatten(start_dim=1)  # shape (num_envs, 8)
 
     def process_actions(self, actions: torch.Tensor):
         """16-D action space: first 4 are for trajectory generator, last 12 are joint position residuals."""
