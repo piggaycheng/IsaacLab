@@ -340,6 +340,51 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
         step_height_scale: float = 1.0
         """Scale factor for the step height command. Defaults to 1.0."""
 
+        # Frequency and duty cycle parameters
+        base_frequency: float = 1.5
+        """Base frequency for gait generation (Hz). Defaults to 1.5."""
+        velocity_to_freq_gain: float = 0.8
+        """Gain for converting velocity to additional frequency. Defaults to 0.8."""
+        default_swing_duty_cycle: float = 0.5
+        """Fixed swing duty cycle ratio. Defaults to 0.5."""
+
+        # Numerical stability
+        eps: float = 1e-6
+        """Small value to avoid division by zero. Defaults to 1e-6."""
+
+        # Velocity limits
+        stance_vx_limit: tuple[float, float] = (-0.8, 0.8)
+        """Forward velocity limits (m/s). Defaults to (-0.8, 0.8)."""
+        stance_vy_limit: tuple[float, float] = (-0.5, 0.5)
+        """Lateral velocity limits (m/s). Defaults to (-0.5, 0.5)."""
+        yaw_rate_limit: tuple[float, float] = (-1.5, 1.5)
+        """Yaw rate limits (rad/s). Defaults to (-1.5, 1.5)."""
+        step_height_limit: tuple[float, float] = (0.02, 0.2)
+        """Step height limits (m). Defaults to (0.02, 0.2)."""
+
+        # Frequency limits
+        frequency_limit: tuple[float, float] = (1.0, 4.0)
+        """Frequency limits (Hz). Defaults to (1.0, 4.0)."""
+
+        # Step length limits
+        step_length_limit: tuple[float, float] = (-0.3, 0.3)
+        """Step length limits (m). Defaults to (-0.3, 0.3)."""
+
+        foot_default_heights: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
+        """預設的腳部高度, 用於計算Z軸位置"""
+
+        leg_y_offsets: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
+        """四條腿的Y軸預設偏移量, 用於計算Y軸位置"""
+
+        leg_x_offsets: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
+        """四條腿的X軸預設偏移量, 用於計算X軸位置"""
+
+        phase_offsets: tuple[float, float, float, float] = (0.0, 0.5, 0.5, 0.0)  # LF, RF, RL, RR
+        """四條腿的相位偏移量, 以實現對角步態"""
+
+        leg_hip_positions: tuple[list[float], list[float], list[float], list[float]] = MISSING  # LF, RF, RL, RR
+        """四條腿的髖關節相對於機身的位置, 用於計算轉向效果"""
+
     class_type: type[ActionTerm] = pmtg_actions.FourLegsPMTGAction
 
     action_dim: int = 16
@@ -348,26 +393,11 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     ik_action_cfgs: list[DifferentialInverseKinematicsActionCfg] = MISSING
     """List of IK configurations for the four legs."""
 
-    phase_offsets: tuple[float, float, float, float] = (0.0, 0.5, 0.5, 0.0)  # LF, RF, RL, RR
-    """四條腿的相位偏移量, 以實現對角步態"""
-
-    leg_hip_positions: tuple[list[float], list[float], list[float], list[float]] = MISSING  # LF, RF, RL, RR
-    """四條腿的髖關節相對於機身的位置, 用於計算轉向效果"""
-
     gain: float = 1.0
     """增益因子, 用於apply_action效果的強度"""
 
     residuals_scale: float = 0.1
     """關節位置殘差的縮放因子, 用於微調PMTG生成的關節位置"""
-
-    foot_default_heights: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
-    """預設的腳部高度, 用於計算Z軸位置"""
-
-    leg_y_offsets: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
-    """四條腿的Y軸預設偏移量, 用於計算Y軸位置"""
-
-    leg_x_offsets: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
-    """四條腿的X軸預設偏移量, 用於計算X軸位置"""
 
     trajectory_generator_params: TrajectoryGeneratorCfg = TrajectoryGeneratorCfg()
 

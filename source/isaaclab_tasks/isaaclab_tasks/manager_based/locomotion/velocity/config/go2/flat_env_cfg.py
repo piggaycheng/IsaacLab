@@ -98,13 +98,15 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
                     ),
                 ),
             ],
-            leg_hip_positions=([0.1934, 0.0465, 0.0], [0.1934, -0.0465, 0.0], [-0.1934, 0.0465, 0.0], [-0.1934, -0.0465, 0.0]),  # FL, FR, RL, RR
             gain=1.0,
             residuals_scale=0.02,
-            foot_default_heights=(-0.30, -0.30, -0.33, -0.33),
-            leg_y_offsets=(0.1, -0.1, 0.1, -0.1),
-            leg_x_offsets=(0.0, 0.0, -0.1, -0.1),
             action_smoothing_alpha=1.0,
+            trajectory_generator_params=mdp.FourLegsPMTGActionCfg.TrajectoryGeneratorCfg(
+                leg_hip_positions=([0.1934, 0.0465, 0.0], [0.1934, -0.0465, 0.0], [-0.1934, 0.0465, 0.0], [-0.1934, -0.0465, 0.0]),  # FL, FR, RL, RR
+                foot_default_heights=(-0.30, -0.30, -0.33, -0.33),
+                leg_y_offsets=(0.1, -0.1, 0.1, -0.1),
+                leg_x_offsets=(0.0, 0.0, -0.1, -0.1),
+            )
         )
 
         self.rewards.track_lin_vel_xy_exp.weight = 2.0

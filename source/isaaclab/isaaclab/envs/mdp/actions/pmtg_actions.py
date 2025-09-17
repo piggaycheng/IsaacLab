@@ -42,18 +42,8 @@ class FourLegsPMTGAction(ActionTerm):
         self.trajectory_generators = [
             HybridFourDimTrajectoryGenerator(
                 trajectory_generator_params=self.cfg.trajectory_generator_params,
-                phase_offset=phase,
-                leg_hip_position=leg_hip_position,
-                default_foot_height=foot_default_height,
-                default_y_offset=leg_y_offset,
-                default_x_offset=leg_x_offset,
-            ) for (phase, leg_hip_position, foot_default_height, leg_y_offset, leg_x_offset) in zip(
-                self.cfg.phase_offsets,
-                self.cfg.leg_hip_positions,
-                self.cfg.foot_default_heights,
-                self.cfg.leg_y_offsets,
-                self.cfg.leg_x_offsets,
-            )
+                leg_index=i,
+            ) for i in range(4)
         ]
 
     @property
@@ -173,50 +163,40 @@ class HybridFourDimTrajectoryGenerator:
 
     def __init__(self,
                  trajectory_generator_params: actions_cfg.FourLegsPMTGActionCfg.TrajectoryGeneratorCfg,
-                 phase_offset: float = 0.0,
-                 leg_hip_position: Sequence[float] | torch.Tensor | None = None,
-                 default_foot_height: float = 0.0,
-                 default_y_offset: float = 0.0,
-                 default_x_offset: float = 0.0,
-                 # --- 可配置的內部參數 ---
-                 base_frequency: float = 1.5,
-                 velocity_to_freq_gain: float = 0.8,
-                 default_swing_duty_cycle: float = 0.5,
+                 leg_index: int,
                  device: torch.device | str | None = None,
                  dtype: torch.dtype = torch.float32,
-                 eps: float = 1e-6,
                  ):
         """
         初始化單腿軌跡生成器。
 
         Args:
-            phase_offset (float): 此腿的初始相位 (0~1)。
-            leg_hip_position (np.ndarray | None): shape (3,) 髖關節在機身座標系下的位置。
-            base_frequency (float): 基礎步頻 (Hz)。
-            velocity_to_freq_gain (float): 速度轉換為額外步頻的增益。
-            default_swing_duty_cycle (float): 固定的擺動相占空比。
+            trajectory_generator_params: 軌跡生成器參數配置
+            leg_index (int): 腿的索引 (0=FL, 1=FR, 2=RL, 3=RR)
+            device: 計算設備
+            dtype: 數據類型
         """
         self.device = torch.device(device) if device is not None else torch.device('cpu')
         self.dtype = dtype
-        self.eps = eps
-        self.default_foot_height = torch.as_tensor(default_foot_height, dtype=self.dtype, device=self.device)
-        self.default_y_offset = torch.as_tensor(default_y_offset, dtype=self.dtype, device=self.device)
-        self.default_x_offset = torch.as_tensor(default_x_offset, dtype=self.dtype, device=self.device)
         self.trajectory_generator_params = trajectory_generator_params
+        self.leg_index = leg_index
+
+        # 從對應的腿索引取得參數
+        self.default_foot_height = torch.as_tensor(trajectory_generator_params.foot_default_heights[leg_index], dtype=self.dtype, device=self.device)
+        self.default_y_offset = torch.as_tensor(trajectory_generator_params.leg_y_offsets[leg_index], dtype=self.dtype, device=self.device)
+        self.default_x_offset = torch.as_tensor(trajectory_generator_params.leg_x_offsets[leg_index], dtype=self.dtype, device=self.device)
 
         # 相位 (初始化為 scalar tensor, 會在 generate 中根據 batch_size 自動擴展)
-        self.phase = torch.tensor(phase_offset % 1.0, device=self.device, dtype=self.dtype)
+        self.phase = torch.tensor(trajectory_generator_params.phase_offsets[leg_index] % 1.0, device=self.device, dtype=self.dtype)
 
-        if leg_hip_position is None:
-            self.leg_hip_position = torch.zeros(3, device=self.device, dtype=self.dtype)
-        else:
-            self.leg_hip_position = torch.as_tensor(leg_hip_position, dtype=self.dtype, device=self.device)
-            assert self.leg_hip_position.shape == (3,), "leg_hip_position 必須是 shape (3,) 的向量"
+        self.leg_hip_position = torch.as_tensor(trajectory_generator_params.leg_hip_positions[leg_index], dtype=self.dtype, device=self.device)
+        assert self.leg_hip_position.shape == (3,), "leg_hip_position 必須是 shape (3,) 的向量"
 
-        # 內部可學 / 可調參數
-        self.base_frequency = torch.as_tensor(base_frequency, dtype=self.dtype, device=self.device)
-        self.velocity_to_freq_gain = torch.as_tensor(velocity_to_freq_gain, dtype=self.dtype, device=self.device)
-        self.default_swing_duty_cycle = torch.as_tensor(default_swing_duty_cycle, dtype=self.dtype, device=self.device)
+        # 從配置中取得參數
+        self.base_frequency = torch.as_tensor(trajectory_generator_params.base_frequency, dtype=self.dtype, device=self.device)
+        self.velocity_to_freq_gain = torch.as_tensor(trajectory_generator_params.velocity_to_freq_gain, dtype=self.dtype, device=self.device)
+        self.default_swing_duty_cycle = torch.as_tensor(trajectory_generator_params.default_swing_duty_cycle, dtype=self.dtype, device=self.device)
+        self.eps = torch.as_tensor(trajectory_generator_params.eps, dtype=self.dtype, device=self.device)
 
     def _update_phase(self, frequency: torch.Tensor, dt: float | torch.Tensor):
         """根據頻率與時間步長更新此腿相位 (支援批次處理)。"""
@@ -246,14 +226,29 @@ class HybridFourDimTrajectoryGenerator:
         actions_on_device = actions.to(self.device, self.dtype)
         stance_vx, stance_vy, yaw_rate, step_height = torch.unbind(actions_on_device, dim=1)
 
-        target_stance_vx = (stance_vx * self.trajectory_generator_params.stance_vx_scale).clamp(-0.8, 0.8)
-        target_stance_vy = (stance_vy * self.trajectory_generator_params.stance_vy_scale).clamp(-0.5, 0.5)
-        target_yaw_rate = (yaw_rate * self.trajectory_generator_params.yaw_rate_scale).clamp(-1.5, 1.5)
-        target_step_height = (step_height * self.trajectory_generator_params.step_height_scale).clamp(0.02, 0.2)
+        target_stance_vx = (stance_vx * self.trajectory_generator_params.stance_vx_scale).clamp(
+            self.trajectory_generator_params.stance_vx_limit[0],
+            self.trajectory_generator_params.stance_vx_limit[1]
+        )
+        target_stance_vy = (stance_vy * self.trajectory_generator_params.stance_vy_scale).clamp(
+            self.trajectory_generator_params.stance_vy_limit[0],
+            self.trajectory_generator_params.stance_vy_limit[1]
+        )
+        target_yaw_rate = (yaw_rate * self.trajectory_generator_params.yaw_rate_scale).clamp(
+            self.trajectory_generator_params.yaw_rate_limit[0],
+            self.trajectory_generator_params.yaw_rate_limit[1]
+        )
+        target_step_height = (step_height * self.trajectory_generator_params.step_height_scale).clamp(
+            self.trajectory_generator_params.step_height_limit[0],
+            self.trajectory_generator_params.step_height_limit[1]
+        )
 
         # 2. 自動推算步頻
         linear_speed = torch.sqrt(target_stance_vx**2 + target_stance_vy**2)
-        target_frequency = (self.base_frequency + self.velocity_to_freq_gain * linear_speed).clamp(1.0, 4.0)
+        target_frequency = (self.base_frequency + self.velocity_to_freq_gain * linear_speed).clamp(
+            self.trajectory_generator_params.frequency_limit[0],
+            self.trajectory_generator_params.frequency_limit[1]
+        )
 
         # 3. 使用固定的占空比
         target_swing_duty_cycle = self.default_swing_duty_cycle
@@ -267,8 +262,16 @@ class HybridFourDimTrajectoryGenerator:
             target_stance_duty_cycle / target_frequency,
         )
 
-        target_step_length_x = torch.clamp(target_stance_vx * stance_duration, -0.3, 0.3)
-        target_step_length_y = torch.clamp(target_stance_vy * stance_duration, -0.3, 0.3)
+        target_step_length_x = torch.clip(
+            target_stance_vx * stance_duration,
+            self.trajectory_generator_params.step_length_limit[0],
+            self.trajectory_generator_params.step_length_limit[1]
+        )
+        target_step_length_y = torch.clip(
+            target_stance_vy * stance_duration,
+            self.trajectory_generator_params.step_length_limit[0],
+            self.trajectory_generator_params.step_length_limit[1]
+        )
 
         # 5. 更新相位並計算軌跡
         self._update_phase(target_frequency, dt)
