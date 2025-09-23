@@ -23,7 +23,7 @@ import argparse
 
 
 class Go2_runner(object):
-    def __init__(self, physics_dt, render_dt, training_folder) -> None:
+    def __init__(self, render_dt, training_folder) -> None:
         """
         creates the simulation world with preset physics_dt and render_dt and creates an Go2 robot inside the warehouse
 
@@ -32,7 +32,6 @@ class Go2_runner(object):
         render_dt {float} -- Render downtime of the scene.
 
         """
-        self._world = World(stage_units_in_meters=1.0, physics_dt=physics_dt, rendering_dt=render_dt)
 
         assets_root_path = get_assets_root_path()
         if assets_root_path is None:
@@ -50,6 +49,8 @@ class Go2_runner(object):
             usd_path=assets_root_path + "/Isaac/Robots/Unitree/Go2/go2.usd",
             position=np.array([0, 0, 0.4]),
         )
+
+        self._world = World(stage_units_in_meters=1.0, physics_dt=self._go2.physics_dt, rendering_dt=render_dt)
 
         self._base_command = np.zeros(3)
 
@@ -153,10 +154,9 @@ def main():
         carb.log_error("Please provide a valid training folder path containing the policy and env yaml")
         return
 
-    physics_dt = 1 / 200.0
     render_dt = 1 / 60.0
 
-    runner = Go2_runner(physics_dt=physics_dt, render_dt=render_dt, training_folder=training_folder)
+    runner = Go2_runner(render_dt=render_dt, training_folder=training_folder)
     simulation_app.update()
     runner._world.reset()
     simulation_app.update()

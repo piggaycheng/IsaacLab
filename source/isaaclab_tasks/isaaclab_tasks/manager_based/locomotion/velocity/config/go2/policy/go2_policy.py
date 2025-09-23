@@ -115,3 +115,11 @@ class Go2FlatTerrainPolicy(PolicyController):
         # self.robot.apply_action(action)
 
         self._policy_counter += 1
+
+    @property
+    def decimation(self) -> int:
+        return self._decimation
+
+    @property
+    def physics_dt(self) -> float:
+        return self._dt
