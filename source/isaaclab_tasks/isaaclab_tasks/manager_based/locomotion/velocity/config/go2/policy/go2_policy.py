@@ -123,3 +123,20 @@ class Go2FlatTerrainPolicy(PolicyController):
     @property
     def physics_dt(self) -> float:
         return self._dt
+
+    @property
+    def joint_names(self) -> list:
+        return self.robot.dof_names
+
+    @property
+    def current_relative_joint_positions(self) -> list:
+        return (self.robot.get_joint_positions() - self.default_pos).tolist()
+
+    @property
+    def current_joint_velocities(self) -> list:
+        return self.robot.get_joint_velocities().tolist()
+
+    @property
+    def current_absolute_joint_positions(self) -> list:
+        """Returns the absolute joint positions."""
+        return self.robot.get_joint_positions().tolist()

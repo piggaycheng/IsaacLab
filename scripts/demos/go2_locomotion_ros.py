@@ -21,9 +21,62 @@ from isaacsim.storage.native import get_assets_root_path
 from isaaclab_tasks.manager_based.locomotion.velocity.config.go2.policy.go2_policy import Go2FlatTerrainPolicy
 import argparse
 
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
+from std_msgs.msg import Float32MultiArray
+
+
+class Go2LocomotionNode(Node):
+    def __init__(self):
+        super().__init__('go2_locomotion_ros')
+
+        self.joint_state_publisher = self.create_publisher(
+            JointState,
+            '/obs/joint_states',
+            QoSProfile(
+                history=QoSHistoryPolicy.KEEP_LAST,
+                depth=1,
+                reliability=QoSReliabilityPolicy.BEST_EFFORT,
+                durability=QoSDurabilityPolicy.VOLATILE,
+            )
+        )
+
+        self.action_subscriber = self.create_subscription(
+            Float32MultiArray,
+            '/action',
+            self.action_callback,
+            QoSProfile(
+                history=QoSHistoryPolicy.KEEP_LAST,
+                depth=1,
+                reliability=QoSReliabilityPolicy.BEST_EFFORT,
+                durability=QoSDurabilityPolicy.VOLATILE,
+            )
+        )
+
+        self._actions = None  # 用於存儲接收到的 action
+
+    def publish_joint_states(self, joint_names, joint_positions, joint_velocities):
+        msg = JointState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.name = joint_names
+        msg.position = joint_positions
+        msg.velocity = joint_velocities
+        self.joint_state_publisher.publish(msg)
+
+    def action_callback(self, msg):
+        self._actions = np.array(msg.data)
+
+    @property
+    def actions(self):
+        return self._actions
+
 
 class Go2_runner(object):
-    def __init__(self, render_dt, training_folder) -> None:
+    node: Go2LocomotionNode
+
+    def __init__(self, render_dt, training_folder, node) -> None:
         """
         creates the simulation world with preset physics_dt and render_dt and creates an Go2 robot inside the warehouse
 
@@ -78,6 +131,8 @@ class Go2_runner(object):
         self.needs_reset = False
         self.first_step = True
 
+        self.node = node
+
     def setup(self) -> None:
         """
         Set up keyboard listener and add physics callback
@@ -102,7 +157,13 @@ class Go2_runner(object):
             self.needs_reset = False
             self.first_step = True
         else:
+            rclpy.spin_once(self.node, timeout_sec=0)  # Non-blocking spin to process incoming messages
             self._go2.forward(step_size, self._base_command)
+            self.node.publish_joint_states(
+                self._go2.joint_names,
+                self._go2.current_relative_joint_positions,
+                self._go2.current_joint_velocities,
+            )
 
     def run(self) -> None:
         """
@@ -145,6 +206,9 @@ def main():
     parser.add_argument("--training_folder", type=str, default="", help="Path to the training folder containing the policy and env yaml")
     args = parser.parse_args()
 
+    rclpy.init()
+    node = Go2LocomotionNode()
+
     training_folder = args.training_folder
     if training_folder == "":
         carb.log_error("Please provide a valid training folder path containing the policy and env yaml")
@@ -152,7 +216,7 @@ def main():
 
     render_dt = 1 / 60.0
 
-    runner = Go2_runner(render_dt=render_dt, training_folder=training_folder)
+    runner = Go2_runner(render_dt=render_dt, training_folder=training_folder, node=node)
     simulation_app.update()
     runner._world.reset()
     simulation_app.update()
@@ -160,6 +224,9 @@ def main():
     simulation_app.update()
     runner.run()
     simulation_app.close()
+
+    node.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":
