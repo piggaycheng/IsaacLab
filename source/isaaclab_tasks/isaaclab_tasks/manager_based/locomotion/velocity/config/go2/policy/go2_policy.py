@@ -54,8 +54,10 @@ class Go2FlatTerrainPolicy(PolicyController):
             training_folder + "/params/env.yaml",
         )
         self._action_scale = 1.0
-        self._previous_action = np.zeros(16)
+        self._previous_policy_output = np.zeros(16)
         self._policy_counter = 0
+
+        self._obs = np.zeros(60)
 
     def _compute_observation(self, command):
         """
@@ -93,11 +95,13 @@ class Go2FlatTerrainPolicy(PolicyController):
         obs[12:24] = current_joint_pos - self.default_pos
         obs[24:36] = current_joint_vel
         # Previous Action
-        obs[36:52] = self._previous_action
+        obs[36:52] = self._previous_policy_output
+
+        self._obs = obs.copy()
 
         return obs
 
-    def forward(self, dt, command):
+    def forward(self, dt, command, action: Optional[np.ndarray] = None):
         """
         Compute the desired torques and apply them to the articulation
 
@@ -106,15 +110,23 @@ class Go2FlatTerrainPolicy(PolicyController):
         command (np.ndarray) -- the robot command (v_x, v_y, w_z)
 
         """
-        if self._policy_counter % self._decimation == 0:
-            obs = self._compute_observation(command)
-            self.action = self._compute_action(obs)
+        obs = self._compute_observation(command)
+        if action is not None:
+            self.action = action
             self._previous_action = self.action.copy()
+        else:
+            if self._policy_counter % self._decimation == 0:
+                self.action = np.zeros(12)
+                self._previous_action = self.action.copy()
 
-        # action = ArticulationAction(joint_positions=self.default_pos + (self.action * self._action_scale))
-        # self.robot.apply_action(action)
+        articulation_action = ArticulationAction(joint_positions=self.default_pos + (self.action * self._action_scale))
+        self.robot.apply_action(articulation_action)
 
         self._policy_counter += 1
+
+    @property
+    def observation(self):
+        return self._obs
 
     @property
     def decimation(self) -> int:
@@ -129,14 +141,14 @@ class Go2FlatTerrainPolicy(PolicyController):
         return self.robot.dof_names
 
     @property
-    def current_relative_joint_positions(self) -> list:
-        return (self.robot.get_joint_positions() - self.default_pos).tolist()
+    def current_relative_joint_positions(self) -> np.ndarray:
+        return (self.robot.get_joint_positions() - self.default_pos)
 
     @property
-    def current_joint_velocities(self) -> list:
-        return self.robot.get_joint_velocities().tolist()
+    def current_joint_velocities(self) -> np.ndarray:
+        return self.robot.get_joint_velocities()
 
     @property
-    def current_absolute_joint_positions(self) -> list:
+    def current_absolute_joint_positions(self) -> np.ndarray:
         """Returns the absolute joint positions."""
-        return self.robot.get_joint_positions().tolist()
+        return self.robot.get_joint_positions()

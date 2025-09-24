@@ -32,6 +32,17 @@ class Go2LocomotionNode(Node):
     def __init__(self):
         super().__init__('go2_locomotion_ros')
 
+        self.obs_publisher = self.create_publisher(
+            Float32MultiArray,
+            '/obs',
+            QoSProfile(
+                history=QoSHistoryPolicy.KEEP_LAST,
+                depth=1,
+                reliability=QoSReliabilityPolicy.BEST_EFFORT,
+                durability=QoSDurabilityPolicy.VOLATILE,
+            )
+        )
+
         self.joint_state_publisher = self.create_publisher(
             JointState,
             '/obs/joint_states',
@@ -55,22 +66,27 @@ class Go2LocomotionNode(Node):
             )
         )
 
-        self._actions = None  # 用於存儲接收到的 action
+        self._action = None  # 用於存儲接收到的 action
 
-    def publish_joint_states(self, joint_names, joint_positions, joint_velocities):
+    def publish_observation(self, observation: np.ndarray):
+        msg = Float32MultiArray()
+        msg.data = observation.tolist()
+        self.obs_publisher.publish(msg)
+
+    def publish_joint_states(self, joint_names: list, joint_positions: np.ndarray, joint_velocities: np.ndarray):
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = joint_names
-        msg.position = joint_positions
-        msg.velocity = joint_velocities
+        msg.position = joint_positions.tolist()
+        msg.velocity = joint_velocities.tolist()
         self.joint_state_publisher.publish(msg)
 
     def action_callback(self, msg):
-        self._actions = np.array(msg.data)
+        self._action = np.array(msg.data)
 
     @property
-    def actions(self):
-        return self._actions
+    def action(self):
+        return self._action
 
 
 class Go2_runner(object):
@@ -100,7 +116,7 @@ class Go2_runner(object):
             training_folder=training_folder,
             name="go2",
             usd_path=assets_root_path + "/Isaac/Robots/Unitree/Go2/go2.usd",
-            position=np.array([0, 0, 0.4]),
+            position=np.array([0, 0, 0.5]),
         )
 
         self._world = World(stage_units_in_meters=1.0, physics_dt=self._go2.physics_dt, rendering_dt=render_dt)
@@ -158,7 +174,8 @@ class Go2_runner(object):
             self.first_step = True
         else:
             rclpy.spin_once(self.node, timeout_sec=0)  # Non-blocking spin to process incoming messages
-            self._go2.forward(step_size, self._base_command)
+            self._go2.forward(step_size, self._base_command, action=self.node.action)
+            self.node.publish_observation(self._go2.observation)
             self.node.publish_joint_states(
                 self._go2.joint_names,
                 self._go2.current_relative_joint_positions,
