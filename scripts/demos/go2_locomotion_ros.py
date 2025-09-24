@@ -142,13 +142,9 @@ def main():
     """
 
     parser = argparse.ArgumentParser(description="Go2 Locomotion ROS Demo")
-    parser.add_argument("--physics_dt", type=float, default=1 / 200.0, help="Physics timestep")
-    parser.add_argument("--render_dt", type=float, default=1 / 60.0, help="Render timestep")
     parser.add_argument("--training_folder", type=str, default="", help="Path to the training folder containing the policy and env yaml")
     args = parser.parse_args()
 
-    physics_dt = args.physics_dt
-    render_dt = args.render_dt
     training_folder = args.training_folder
     if training_folder == "":
         carb.log_error("Please provide a valid training folder path containing the policy and env yaml")
