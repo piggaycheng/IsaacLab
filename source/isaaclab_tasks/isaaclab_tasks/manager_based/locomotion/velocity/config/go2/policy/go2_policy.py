@@ -53,7 +53,6 @@ class Go2FlatTerrainPolicy(PolicyController):
             training_folder + "/exported/policy.pt",
             training_folder + "/params/env.yaml",
         )
-        self._action_scale = 1.0
         self._previous_policy_output = np.zeros(16)
         self._policy_counter = 0
 
@@ -101,7 +100,7 @@ class Go2FlatTerrainPolicy(PolicyController):
 
         return obs
 
-    def forward(self, dt, command, action: Optional[np.ndarray] = None):
+    def forward(self, dt, command, action: Optional[np.ndarray]):
         """
         Compute the desired torques and apply them to the articulation
 
@@ -110,17 +109,14 @@ class Go2FlatTerrainPolicy(PolicyController):
         command (np.ndarray) -- the robot command (v_x, v_y, w_z)
 
         """
-        obs = self._compute_observation(command)
+
         if action is not None:
+            self._compute_observation(command)
             self.action = action
             self._previous_action = self.action.copy()
-        else:
-            if self._policy_counter % self._decimation == 0:
-                self.action = np.zeros(12)
-                self._previous_action = self.action.copy()
 
-        articulation_action = ArticulationAction(joint_positions=self.default_pos + (self.action * self._action_scale))
-        self.robot.apply_action(articulation_action)
+            articulation_action = ArticulationAction(joint_positions=self.action)
+            self.robot.apply_action(articulation_action)
 
         self._policy_counter += 1
 
