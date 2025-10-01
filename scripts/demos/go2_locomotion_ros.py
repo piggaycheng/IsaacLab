@@ -34,7 +34,7 @@ class Go2LocomotionNode(Node):
 
         self.obs_publisher = self.create_publisher(
             Float32MultiArray,
-            '/obs',
+            '/observation',
             QoSProfile(
                 history=QoSHistoryPolicy.KEEP_LAST,
                 depth=1,
@@ -45,7 +45,7 @@ class Go2LocomotionNode(Node):
 
         self.joint_state_publisher = self.create_publisher(
             JointState,
-            '/obs/joint_states',
+            '/joint_states',
             QoSProfile(
                 history=QoSHistoryPolicy.KEEP_LAST,
                 depth=1,
@@ -86,7 +86,10 @@ class Go2LocomotionNode(Node):
 
     @property
     def action(self):
-        return self._action
+        if self._action is not None:
+            return np.array([self._action[index:index + 3] for index in range(0, len(self._action), 3)]).T.flatten()
+
+        return None
 
 
 class Go2_runner(object):
@@ -178,7 +181,7 @@ class Go2_runner(object):
             self.node.publish_observation(self._go2.observation)
             self.node.publish_joint_states(
                 self._go2.joint_names,
-                self._go2.current_relative_joint_positions,
+                self._go2.current_absolute_joint_positions,
                 self._go2.current_joint_velocities,
             )
 
