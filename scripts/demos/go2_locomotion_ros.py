@@ -25,7 +25,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float64MultiArray
 
 
 class Go2LocomotionNode(Node):
@@ -33,7 +33,7 @@ class Go2LocomotionNode(Node):
         super().__init__('go2_locomotion_ros')
 
         self.obs_publisher = self.create_publisher(
-            Float32MultiArray,
+            Float64MultiArray,
             '/observation',
             QoSProfile(
                 history=QoSHistoryPolicy.KEEP_LAST,
@@ -55,7 +55,7 @@ class Go2LocomotionNode(Node):
         )
 
         self.action_subscriber = self.create_subscription(
-            Float32MultiArray,
+            Float64MultiArray,
             '/action',
             self.action_callback,
             QoSProfile(
@@ -69,7 +69,7 @@ class Go2LocomotionNode(Node):
         self._action = None  # 用於存儲接收到的 action
 
     def publish_observation(self, observation: np.ndarray):
-        msg = Float32MultiArray()
+        msg = Float64MultiArray()
         msg.data = observation.tolist()
         self.obs_publisher.publish(msg)
 
