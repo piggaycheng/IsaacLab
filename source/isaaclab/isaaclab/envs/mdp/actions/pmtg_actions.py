@@ -43,6 +43,7 @@ class FourLegsPMTGAction(ActionTerm):
             HybridFourDimTrajectoryGenerator(
                 trajectory_generator_params=self.cfg.trajectory_generator_params,
                 leg_index=i,
+                device=self.device,
             ) for i in range(4)
         ]
 
