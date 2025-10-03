@@ -7,6 +7,8 @@ from isaaclab.utils import configclass
 
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 from isaaclab.managers import ObservationTermCfg as ObsTerm
+from isaaclab.managers import RewardTermCfg as RewTerm
+from isaaclab.managers import SceneEntityCfg
 
 from .rough_env_cfg import UnitreeGo2RoughEnvCfg
 
@@ -103,22 +105,34 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
             action_smoothing_alpha=1.0,
             trajectory_generator_params=mdp.FourLegsPMTGActionCfg.TrajectoryGeneratorCfg(
                 leg_hip_positions=([0.1934, 0.0465, 0.0], [0.1934, -0.0465, 0.0], [-0.1934, 0.0465, 0.0], [-0.1934, -0.0465, 0.0]),  # FL, FR, RL, RR
-                foot_default_heights=(-0.30, -0.30, -0.33, -0.33),
+                foot_default_heights=(-0.25, -0.25, -0.28, -0.28),
                 leg_y_offsets=(0.1, -0.1, 0.1, -0.1),
-                leg_x_offsets=(0.0, 0.0, -0.1, -0.1),
+                leg_x_offsets=(0.05, 0.05, -0.05, -0.05),
+                stance_vx_scale=0.5,
+                stance_vy_scale=0.5,
+                yaw_rate_scale=0.5,
+                step_height_scale=0.5,
             )
         )
 
         self.rewards.track_lin_vel_xy_exp.weight = 2.0
         self.rewards.track_ang_vel_z_exp.weight = 1.0
         self.rewards.dof_pos_limits.weight = -2.0
-
-        self.observations.policy.pmtg_phase = ObsTerm(
-            func=mdp.trajectory_generator_phase,
+        self.rewards.standing_still = RewTerm(
+            func=mdp.stand_still_joint_deviation_l1,
+            weight=-2.0,
             params={
-                "action_name": "joint_pos",
+                "command_name": "base_velocity",
+                "asset_cfg": SceneEntityCfg("robot", joint_names=[".*"]),
             },
         )
+
+        # self.observations.policy.pmtg_phase = ObsTerm(
+        #     func=mdp.trajectory_generator_phase,
+        #     params={
+        #         "action_name": "joint_pos",
+        #     },
+        # )
 
 
 @configclass

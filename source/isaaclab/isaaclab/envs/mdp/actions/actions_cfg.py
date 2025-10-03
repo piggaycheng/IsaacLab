@@ -353,14 +353,16 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
         """Small value to avoid division by zero. Defaults to 1e-6."""
 
         # Velocity limits
-        stance_vx_limit: tuple[float, float] = (-0.8, 0.8)
-        """Forward velocity limits (m/s). Defaults to (-0.8, 0.8)."""
-        stance_vy_limit: tuple[float, float] = (-0.5, 0.5)
-        """Lateral velocity limits (m/s). Defaults to (-0.5, 0.5)."""
+        stance_vx_limit: tuple[float, float] = (-1.0, 1.0)
+        """Forward velocity limits (m/s). Defaults to (-1.0, 1.0)."""
+        stance_vy_limit: tuple[float, float] = (-1.0, 1.0)
+        """Lateral velocity limits (m/s). Defaults to (-1.0, 1.0)."""
         yaw_rate_limit: tuple[float, float] = (-1.5, 1.5)
         """Yaw rate limits (rad/s). Defaults to (-1.5, 1.5)."""
         step_height_limit: tuple[float, float] = (0.02, 0.2)
         """Step height limits (m). Defaults to (0.02, 0.2)."""
+        still_threshold: float = 0.05
+        """Threshold for considering the robot as still (m/s). Defaults to 0.05."""
 
         # Frequency limits
         frequency_limit: tuple[float, float] = (1.0, 4.0)
