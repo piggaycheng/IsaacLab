@@ -43,6 +43,7 @@ class FourLegsPMTGAction(ActionTerm):
             HybridFourDimTrajectoryGenerator(
                 trajectory_generator_params=self.cfg.trajectory_generator_params,
                 leg_index=i,
+                device=self.device,
             ) for i in range(4)
         ]
 
@@ -273,8 +274,39 @@ class HybridFourDimTrajectoryGenerator:
             self.trajectory_generator_params.step_length_limit[1]
         )
 
-        # 5. 更新相位並計算軌跡
+        # 檢測靜止指令（添加容差）
+        is_stationary = (
+            (torch.abs(target_stance_vx) < self.trajectory_generator_params.still_threshold)
+            & (torch.abs(target_stance_vy) < self.trajectory_generator_params.still_threshold)
+            & (torch.abs(target_yaw_rate) < self.trajectory_generator_params.still_threshold)
+        )
+
+        # 靜止時凍結相位更新
+        target_frequency = torch.where(
+            is_stationary,
+            torch.zeros_like(target_frequency),
+            target_frequency
+        )
+
+        # 5. 更新相位
         self._update_phase(target_frequency, dt)
+
+        # 靜止時強制步幅為零
+        target_step_length_x = torch.where(
+            is_stationary,
+            torch.zeros_like(target_step_length_x),
+            target_step_length_x
+        )
+        target_step_length_y = torch.where(
+            is_stationary,
+            torch.zeros_like(target_step_length_y),
+            target_step_length_y
+        )
+        target_step_height = torch.where(
+            is_stationary,
+            torch.zeros_like(target_step_height),
+            target_step_height
+        )
 
         # --- 使用 torch.where 取代 if/else 邏輯 ---
         is_swing = self.phase < target_swing_duty_cycle
@@ -306,7 +338,8 @@ class HybridFourDimTrajectoryGenerator:
         y = self.default_y_offset + y_motion
 
         # --- Yaw 效應 (僅在支撐相且頻率不為零時加入) ---
-        apply_yaw_effect = (~is_swing) & (target_frequency > self.eps)
+        # 靜止時禁用 yaw 效應
+        apply_yaw_effect = (~is_swing) & (target_frequency > self.eps) & (~is_stationary)
 
         # 預先計算 yaw 效應 (broadcasting 會自動處理)
         # 修正：將位移計算與 stance_duration 關聯，以符合物理模型
