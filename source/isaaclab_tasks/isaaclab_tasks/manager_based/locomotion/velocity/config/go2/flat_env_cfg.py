@@ -126,6 +126,7 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
                 "asset_cfg": SceneEntityCfg("robot", joint_names=[".*"]),
             },
         )
+        self.rewards.action_rate_l2 = None
 
         # self.observations.policy.pmtg_phase = ObsTerm(
         #     func=mdp.trajectory_generator_phase,
