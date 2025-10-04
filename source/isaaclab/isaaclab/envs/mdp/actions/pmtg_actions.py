@@ -244,23 +244,32 @@ class HybridFourDimTrajectoryGenerator:
             self.trajectory_generator_params.step_height_limit[1]
         )
 
-        # 2. 自動推算步頻
+        # 2. 自動推算步頻 (motion_frequency)，靜止時為零
         linear_speed = torch.sqrt(target_stance_vx**2 + target_stance_vy**2)
-        target_frequency = (self.base_frequency + self.velocity_to_freq_gain * linear_speed).clamp(
-            self.trajectory_generator_params.frequency_limit[0],
-            self.trajectory_generator_params.frequency_limit[1]
+        # 只有在有有效指令時才啟用步頻
+        is_moving = (linear_speed > self.eps) | (torch.abs(target_yaw_rate) > self.eps)
+        motion_frequency = torch.where(
+            is_moving,
+            (self.base_frequency + self.velocity_to_freq_gain * linear_speed).clamp(
+                self.trajectory_generator_params.frequency_limit[0],
+                self.trajectory_generator_params.frequency_limit[1]
+            ),
+            torch.zeros_like(linear_speed)
         )
 
-        # 3. 使用固定的占空比
+        # 3. 使用 motion_frequency 更新相位。靜止時，相位會被凍結
+        self._update_phase(motion_frequency, dt)
+
+        # 4. 使用固定的占空比
         target_swing_duty_cycle = self.default_swing_duty_cycle
         target_stance_duty_cycle = 1.0 - target_swing_duty_cycle
 
-        # 4. 推導步幅
+        # 5. 推導步幅，其計算與 motion_frequency 同步
         # 避免除以零
         stance_duration = torch.where(
-            target_frequency < self.eps,
-            torch.zeros_like(target_frequency),
-            target_stance_duty_cycle / target_frequency,
+            motion_frequency < self.eps,
+            torch.zeros_like(motion_frequency),
+            target_stance_duty_cycle / motion_frequency,
         )
 
         target_step_length_x = torch.clip(
@@ -274,20 +283,20 @@ class HybridFourDimTrajectoryGenerator:
             self.trajectory_generator_params.step_length_limit[1]
         )
 
-        # 5. 更新相位並計算軌跡
-        self._update_phase(target_frequency, dt)
-
+        # 6. 計算軌跡
         # --- 使用 torch.where 取代 if/else 邏輯 ---
         is_swing = self.phase < target_swing_duty_cycle
 
         # 為 is_swing=True 和 is_swing=False 兩種情況都計算 phase
-        phase_in_swing = self.phase / target_swing_duty_cycle
-        phase_in_stance = (self.phase - target_swing_duty_cycle) / target_stance_duty_cycle
+        # 避免除以零
+        phase_in_swing = torch.where(target_swing_duty_cycle > self.eps, self.phase / target_swing_duty_cycle, torch.zeros_like(self.phase))
+        phase_in_stance = torch.where(target_stance_duty_cycle > self.eps, (self.phase - target_swing_duty_cycle) / target_stance_duty_cycle, torch.zeros_like(self.phase))
 
         # --- Z 軸軌跡 ---
+        # 只有在 is_moving 為 True 且處於擺動相時，才實際抬腿
         z_swing_offset = 0.5 * target_step_height * (1 - torch.cos(2 * torch.pi * phase_in_swing))
         z_stance_offset = torch.zeros_like(z_swing_offset)
-        z_offset = torch.where(is_swing, z_swing_offset, z_stance_offset)
+        z_offset = torch.where(is_swing & is_moving, z_swing_offset, z_stance_offset)
         # 最終 Z 軸位置 = 預設高度 + 位移
         z = self.default_foot_height + z_offset
 
@@ -306,13 +315,10 @@ class HybridFourDimTrajectoryGenerator:
         x = self.default_x_offset + x_motion
         y = self.default_y_offset + y_motion
 
-        # --- Yaw 效應 (僅在支撐相且頻率不為零時加入) ---
-        apply_yaw_effect = (~is_swing) & (target_frequency > self.eps)
+        # --- Yaw 效應 (僅在支撐相且移動時加入) ---
+        apply_yaw_effect = (~is_swing) & is_moving
 
         # 預先計算 yaw 效應 (broadcasting 會自動處理)
-        # 修正：將位移計算與 stance_duration 關聯，以符合物理模型
-        # scale 因子 (1 - 2 * phase_in_stance) 會將位移從 +effect 掃描到 -effect，
-        # 總位移是 effect 的兩倍。因此 effect 應為總位移的一半。
         total_displacement_yaw_x = -self.leg_hip_position[1] * target_yaw_rate * stance_duration
         total_displacement_yaw_y = self.leg_hip_position[0] * target_yaw_rate * stance_duration
 
