@@ -359,8 +359,8 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
         """Lateral velocity limits (m/s). Defaults to (-1.0, 1.0)."""
         yaw_rate_limit: tuple[float, float] = (-1.5, 1.5)
         """Yaw rate limits (rad/s). Defaults to (-1.5, 1.5)."""
-        step_height_limit: tuple[float, float] = (0.02, 0.2)
-        """Step height limits (m). Defaults to (0.02, 0.2)."""
+        step_height_limit: tuple[float, float] = (0.0, 0.2)
+        """Step height limits (m). Defaults to (0.0, 0.2)."""
         still_threshold: float = 0.05
         """Threshold for considering the robot as still (m/s). Defaults to 0.05."""
 
