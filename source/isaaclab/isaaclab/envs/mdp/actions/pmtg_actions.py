@@ -254,7 +254,8 @@ class HybridFourDimTrajectoryGenerator:
 
         # 2. 自動推算步頻
         linear_speed = torch.sqrt(target_stance_vx**2 + target_stance_vy**2)
-        target_frequency = (self.base_frequency + self.velocity_to_freq_gain * linear_speed).clamp(
+        # 當速度為零時，頻率也應為零。
+        target_frequency = (self.base_frequency * self.velocity_to_freq_gain * linear_speed).clamp(
             self.trajectory_generator_params.frequency_limit[0],
             self.trajectory_generator_params.frequency_limit[1]
         )
