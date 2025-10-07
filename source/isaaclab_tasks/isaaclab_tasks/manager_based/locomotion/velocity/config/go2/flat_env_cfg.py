@@ -105,7 +105,7 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
             action_smoothing_alpha=1.0,
             trajectory_generator_params=mdp.FourLegsPMTGActionCfg.TrajectoryGeneratorCfg(
                 leg_hip_positions=([0.1934, 0.0465, 0.0], [0.1934, -0.0465, 0.0], [-0.1934, 0.0465, 0.0], [-0.1934, -0.0465, 0.0]),  # FL, FR, RL, RR
-                foot_default_heights=(-0.25, -0.25, -0.28, -0.28),
+                foot_default_heights=(-0.28, -0.28, -0.28, -0.28),
                 leg_y_offsets=(0.1, -0.1, 0.1, -0.1),
                 leg_x_offsets=(0.05, 0.05, -0.05, -0.05),
                 stance_vx_scale=0.5,
@@ -126,7 +126,6 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
                 "asset_cfg": SceneEntityCfg("robot", joint_names=[".*"]),
             },
         )
-        self.rewards.action_rate_l2 = None
 
         # self.observations.policy.pmtg_phase = ObsTerm(
         #     func=mdp.trajectory_generator_phase,
