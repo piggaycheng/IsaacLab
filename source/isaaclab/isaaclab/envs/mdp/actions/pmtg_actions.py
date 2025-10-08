@@ -67,6 +67,12 @@ class FourLegsPMTGAction(ActionTerm):
         phase_sin_cos = torch.stack([phases_sin, phases_cos], dim=-1)
         return phase_sin_cos.flatten(start_dim=1)  # shape (num_envs, 8)
 
+    @property
+    def joint_pos_des(self) -> torch.Tensor:
+        """Get the desired joint positions from all IK action terms."""
+        joint_pos_list = [term.joint_pos_des for term in self.ik_action_terms]
+        return torch.cat(joint_pos_list, dim=1)  # Concatenate along the joint dimension
+
     def process_actions(self, actions: torch.Tensor):
         """16-D action space: first 4 are for trajectory generator, last 12 are joint position residuals."""
 
@@ -121,6 +127,10 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
     @property
     def ik_controller(self) -> DifferentialIKController:
         return self._ik_controller
+
+    @property
+    def joint_pos_des(self) -> torch.Tensor:
+        return self._joint_pos_des
 
     def process_actions(self, actions: torch.Tensor):
         super().process_actions(actions)
