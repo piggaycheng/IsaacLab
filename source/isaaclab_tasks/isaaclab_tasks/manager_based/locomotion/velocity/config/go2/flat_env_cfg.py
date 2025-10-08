@@ -148,3 +148,27 @@ class UnitreeGo2FlatEnvCfg_PMTG_PLAY(UnitreeGo2FlatEnvCfg_PMTG):
         # remove random pushing event
         self.events.base_external_force_torque = None
         self.events.push_robot = None
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v1(UnitreeGo2FlatEnvCfg_PMTG):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.observations.policy.pmtg_phase = ObsTerm(
+            func=mdp.trajectory_generator_phase,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
+
+        self.observations.policy.pmtg_joint_pos_des = ObsTerm(
+            func=mdp.trajectory_generator_joint_pos_des,
+            params={
+                "action_name": "joint_pos",
+            },
+            history_length=2
+        )
+
+        self.observations.policy.joint_pos.history_length = 3
+        self.observations.policy.joint_vel.history_length = 2
