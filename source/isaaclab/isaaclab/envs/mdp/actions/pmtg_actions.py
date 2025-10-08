@@ -111,6 +111,7 @@ class FourLegsPMTGAction(ActionTerm):
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         self._raw_actions[env_ids] = 0.0
         self._processed_actions[env_ids] = 0.0
+        self._phases[env_ids] = 0.0
         # Reset the phase for each trajectory generator
         for i in range(4):
             # On the first reset, the phase tensor is a scalar.
@@ -118,11 +119,15 @@ class FourLegsPMTGAction(ActionTerm):
             self.trajectory_generators[i].phase = self.trajectory_generators[i].phase.expand(self.num_envs).clone()
             # Reset the phase for the specified environments
             self.trajectory_generators[i].phase[env_ids] = self.cfg.trajectory_generator_params.phase_offsets[i] % 1.0
+            # Reset the IK action terms for the specified environments
+            self.ik_action_terms[i].reset(env_ids)
 
 
 class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction):
     def __init__(self, cfg: actions_cfg.DifferentialInverseKinematicsActionCfg, env: ManagerBasedEnv):
         super().__init__(cfg, env)
+
+        self._joint_pos_des = torch.zeros(self.num_envs, len(self._joint_ids), device=self.device)
 
     @property
     def ik_controller(self) -> DifferentialIKController:
@@ -163,6 +168,10 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
 
     def set_residuals_scale(self, scale: float):
         self._residuals_scale = scale
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        super().reset(env_ids)
+        self._joint_pos_des[env_ids] = 0.0
 
 
 class HybridFourDimTrajectoryGenerator:
