@@ -109,8 +109,7 @@ class FourLegsPMTGAction(ActionTerm):
         for i in range(4):
             # On the first reset, the phase tensor is a scalar.
             # We need to expand it to the number of environments.
-            if self.trajectory_generators[i].phase.numel() != self.num_envs:
-                self.trajectory_generators[i].phase = self.trajectory_generators[i].phase.expand(self.num_envs).clone()
+            self.trajectory_generators[i].phase = self.trajectory_generators[i].phase.expand(self.num_envs).clone()
             # Reset the phase for the specified environments
             self.trajectory_generators[i].phase[env_ids] = self.cfg.trajectory_generator_params.phase_offsets[i] % 1.0
 
