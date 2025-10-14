@@ -331,46 +331,31 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     class TrajectoryGeneratorCfg:
         """Configuration for the trajectory generator used in PMTG."""
 
-        stance_vx_scale: float = 1.0
+        frequency_scale: float = 1.0
+        """Scale factor for the frequency command. Defaults to 1.0."""
+        step_length_x_scale: float = 1.0
         """Scale factor for the forward velocity command. Defaults to 1.0."""
-        stance_vy_scale: float = 1.0
+        step_length_y_scale: float = 1.0
         """Scale factor for the lateral velocity command. Defaults to 1.0."""
-        yaw_rate_scale: float = 1.0
-        """Scale factor for the yaw rate command. Defaults to 1.0."""
         step_height_scale: float = 1.0
         """Scale factor for the step height command. Defaults to 1.0."""
 
-        # Frequency and duty cycle parameters
-        base_frequency: float = 1.5
-        """Base frequency for gait generation (Hz). Defaults to 1.5."""
-        velocity_to_freq_gain: float = 0.8
-        """Gain for converting velocity to additional frequency. Defaults to 0.8."""
         default_swing_duty_cycle: float = 0.5
         """Fixed swing duty cycle ratio. Defaults to 0.5."""
 
-        # Numerical stability
-        eps: float = 1e-6
-        """Small value to avoid division by zero. Defaults to 1e-6."""
-
-        # Velocity limits
-        stance_vx_limit: tuple[float, float] = (-1.0, 1.0)
-        """Forward velocity limits (m/s). Defaults to (-1.0, 1.0)."""
-        stance_vy_limit: tuple[float, float] = (-1.0, 1.0)
-        """Lateral velocity limits (m/s). Defaults to (-1.0, 1.0)."""
-        yaw_rate_limit: tuple[float, float] = (-1.5, 1.5)
-        """Yaw rate limits (rad/s). Defaults to (-1.5, 1.5)."""
         step_height_limit: tuple[float, float] = (0.0, 0.2)
         """Step height limits (m). Defaults to (0.0, 0.2)."""
-        still_threshold: float = 0.05
-        """Threshold for considering the robot as still (m/s). Defaults to 0.05."""
 
         # Frequency limits
-        frequency_limit: tuple[float, float] = (1.0, 4.0)
-        """Frequency limits (Hz). Defaults to (1.0, 4.0)."""
+        frequency_limit: tuple[float, float] = (0.0, 4.0)
+        """Frequency limits (Hz). Defaults to (0.0, 4.0)."""
 
         # Step length limits
-        step_length_limit: tuple[float, float] = (-0.3, 0.3)
-        """Step length limits (m). Defaults to (-0.3, 0.3)."""
+        step_length_x_limit: tuple[float, float] = (-0.4, 0.4)
+        """X step length limits (m). Defaults to (-0.4, 0.4)."""
+
+        step_length_y_limit: tuple[float, float] = (-0.2, 0.2)
+        """Y step length limits (m). Defaults to (-0.2, 0.2)."""
 
         foot_default_heights: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
         """預設的腳部高度, 用於計算Z軸位置"""
