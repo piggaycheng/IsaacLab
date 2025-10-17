@@ -101,18 +101,18 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
                 ),
             ],
             gain=1.0,
-            residuals_scale=0.02,
             action_smoothing_alpha=1.0,
             trajectory_generator_params=mdp.FourLegsPMTGActionCfg.TrajectoryGeneratorCfg(
-                leg_hip_positions=([0.1934, 0.0465, 0.0], [0.1934, -0.0465, 0.0], [-0.1934, 0.0465, 0.0], [-0.1934, -0.0465, 0.0]),  # FL, FR, RL, RR
-                foot_default_heights=(-0.28, -0.28, -0.28, -0.28),
-                leg_y_offsets=(0.1, -0.1, 0.1, -0.1),
-                leg_x_offsets=(0.05, 0.05, -0.05, -0.05),
-                stance_vx_scale=0.5,
-                stance_vy_scale=0.5,
-                yaw_rate_scale=0.5,
-                step_height_scale=0.5,
-            )
+                leg_hip_positions=(
+                    [0.1934, 0.0465, 0.0],
+                    [0.1934, -0.0465, 0.0],
+                    [-0.1934, 0.0465, 0.0],
+                    [-0.1934, -0.0465, 0.0],
+                ),  # FL, FR, RL, RR
+                foot_default_heights=(-0.3, -0.3, -0.32, -0.32),
+                leg_y_offsets=(0.12, -0.12, 0.12, -0.12),
+                leg_x_offsets=(0.02, 0.02, -0.05, -0.05),
+            ),
         )
 
         self.rewards.track_lin_vel_xy_exp.weight = 2.0
@@ -167,8 +167,35 @@ class UnitreeGo2FlatEnvCfg_PMTG_v1(UnitreeGo2FlatEnvCfg_PMTG):
             params={
                 "action_name": "joint_pos",
             },
-            history_length=2
+            history_length=2,
         )
 
         self.observations.policy.joint_pos.history_length = 3
         self.observations.policy.joint_vel.history_length = 2
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v2(UnitreeGo2FlatEnvCfg_PMTG_v1):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.commands.base_velocity.rel_standing_envs = 0.2
+
+        self.rewards.track_lin_vel_xy_exp.weight = 5.0
+        self.rewards.track_ang_vel_z_exp.weight = 5.0
+        self.rewards.alive = RewTerm(
+            func=mdp.is_alive,
+            weight=2.0,
+        )
+        self.rewards.standing_trajectory_action_penalty = RewTerm(
+            func=mdp.pmtg_standing_trajectory_action_l2,
+            weight=-3.0,
+            params={
+                "command_name": "base_velocity",
+            },
+        )
+        self.rewards.joint_residuals_penalty = RewTerm(
+            func=mdp.pmtg_joint_residuals_l2,
+            weight=-0.025,
+        )
+        self.rewards.standing_still = None

@@ -60,6 +60,8 @@ class UnitreeGo2PMTGPPORunnerCfg(UnitreeGo2RoughPPORunnerCfg):
 
         self.max_iterations = 3000
         self.experiment_name = "unitree_go2_pmtg"
+        self.policy.actor_hidden_dims = [512, 256, 128]
+        self.policy.critic_hidden_dims = [512, 256, 128]
 
 
 @configclass

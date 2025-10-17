@@ -114,3 +114,45 @@ def stand_still_joint_deviation_l1(
     command = env.command_manager.get_command(command_name)
     # Penalize motion when command is nearly zero.
     return mdp.joint_deviation_l1(env, asset_cfg) * (torch.norm(command[:, :2], dim=1) < command_threshold)
+
+
+def pmtg_standing_trajectory_action_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    command_threshold: float = 0.06,
+) -> torch.Tensor:
+    """
+    Penalizes non-zero actions when the command is to stand still.
+    This encourages the policy to output zero actions when no motion is desired.
+    """
+    # 1. 獲取當前的指令 (commands)
+    # command_manager 通常會儲存當前的指令，維度為 (num_envs, command_dim)
+    commands = env.command_manager.get_command(command_name)
+
+    # 2. 獲取策略網路輸出的原始動作 (actions)
+    # action_manager 會儲存策略輸出的動作，維度為 (num_envs, action_dim)
+    # 在您的 PMTG 設定中，這是一個 16 維的向量
+    actions = env.action_manager.action
+    # 只取出前4個維度，也就是軌跡生成器的參數
+    trajectory_actions = actions[:, :4]
+
+    # 3. 判斷哪些環境的指令是「站立」
+    # 我們可以計算指令向量的範數 (norm)，如果接近於零，就視為站立指令。
+    # 這裡我們只關心線速度和角速度，通常是前 3 個維度 (vx, vy, yaw_rate)
+    command_norm = torch.norm(commands[:, :3], dim=1)
+    # 設定一個小的閾值來判斷是否為零指令
+    is_standing_command = command_norm < command_threshold
+
+    # 4. 計算動作的懲罰
+    # 我們可以使用動作向量的平方 L2 範數來量化動作的大小。
+    # 這會懲罰任何非零的動作。
+    trajectory_action_penalty = torch.sum(torch.square(trajectory_actions), dim=1)
+
+    return trajectory_action_penalty * is_standing_command
+
+
+def pmtg_joint_residuals_l2(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Penalizes the L2 norm of the joint position residuals."""
+    # PMTG action 的後 12 個維度是 residuals
+    residuals = env.action_manager.action[:, 4:]
+    return torch.sum(torch.square(residuals), dim=1)
