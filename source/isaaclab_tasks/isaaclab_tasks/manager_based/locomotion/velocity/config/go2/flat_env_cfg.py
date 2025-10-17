@@ -184,11 +184,19 @@ class UnitreeGo2FlatEnvCfg_PMTG_v2(UnitreeGo2FlatEnvCfg_PMTG_v1):
         self.rewards.track_ang_vel_z_exp.weight = 5.0
         self.rewards.alive = RewTerm(
             func=mdp.is_alive,
-            weight=2.0,
+            weight=1.0,
         )
         self.rewards.standing_trajectory_action_penalty = RewTerm(
             func=mdp.pmtg_standing_trajectory_action_l2,
             weight=-3.0,
+            params={
+                "command_name": "base_velocity",
+                "action_name": "joint_pos",
+            },
+        )
+        self.rewards.standing_residuals_action_penalty = RewTerm(
+            func=mdp.pmtg_standing_residuals_l2,
+            weight=-2.0,
             params={
                 "command_name": "base_velocity",
                 "action_name": "joint_pos",

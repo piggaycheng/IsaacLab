@@ -154,6 +154,35 @@ def pmtg_standing_trajectory_action_l2(
     return trajectory_action_penalty * is_standing_command
 
 
+def pmtg_standing_residuals_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    command_threshold: float = 0.06,
+    action_name: str = "joint_pos",
+) -> torch.Tensor:
+    """
+    Penalizes non-zero joint residuals when the command is to stand still.
+    This encourages the policy to output zero residuals when no motion is desired.
+    """
+    # 1. Get the current command
+    commands = env.command_manager.get_command(command_name)
+
+    # 2. Get the joint residuals from the action
+    action_term = env.action_manager.get_term(action_name)
+    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
+    residuals = pmtg_action_term.processed_actions[:, 4:]
+
+    # 3. Determine when the command is to stand still
+    command_norm = torch.norm(commands[:, :3], dim=1)
+    is_standing_command = command_norm < command_threshold
+
+    # 4. Calculate the penalty on residuals
+    residual_penalty = torch.sum(torch.square(residuals), dim=1)
+
+    # 5. Apply the penalty only when standing still
+    return residual_penalty * is_standing_command
+
+
 def pmtg_joint_residuals_l2(env: ManagerBasedRLEnv, action_name: str = "joint_pos") -> torch.Tensor:
     """Penalizes the L2 norm of the joint position residuals."""
     # PMTG action 的後 12 個維度是 residuals
