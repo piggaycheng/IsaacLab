@@ -378,3 +378,8 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     """關節位置殘差的限制範圍, 防止過大的調整"""
 
     trajectory_generator_params: TrajectoryGeneratorCfg = TrajectoryGeneratorCfg()
+
+    command_name: str = "base_velocity"
+    """The name of the command to use for the trajectory generator. Defaults to "base_velocity"."""
+    command_threshold: float = 0.1
+    """Threshold to consider command as zero command. Defaults to 0.1."""

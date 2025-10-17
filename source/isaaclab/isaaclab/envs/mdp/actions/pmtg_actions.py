@@ -88,7 +88,19 @@ class FourLegsPMTGAction(ActionTerm):
 
         # 將原始動作使用tanh處理縮放平移
         self._raw_actions[:] = actions
-        frequency, amp_x, amp_y, amp_z = actions[:, :4].unbind(dim=1)
+
+        # 獲取指令
+        command_name = self.cfg.command_name
+        command_threshold = self.cfg.command_threshold
+        commands = self._env.command_manager.get_command(command_name)
+        command_norm = torch.norm(commands[:, :3], dim=1)
+        is_standing_command = (command_norm < command_threshold).unsqueeze(1) # Shape: (num_envs, 1)
+
+        # Process trajectory generator arguments
+        tg_actions_raw = actions[:, :4]
+        # When standing, force trajectory generator actions to zero
+        tg_actions_raw = torch.where(is_standing_command, torch.zeros_like(tg_actions_raw), tg_actions_raw)
+        frequency, amp_x, amp_y, amp_z = tg_actions_raw.unbind(dim=1)
         processed_tg_args = torch.stack(
             [
                 self.tanh_process(
@@ -106,8 +118,10 @@ class FourLegsPMTGAction(ActionTerm):
             ],
             dim=1,
         )
+        # Process residuals (always active)
+        residuals_raw = actions[:, 4:]
         processed_residuals = self.tanh_process(
-            actions[:, 4:], self.cfg.residuals_limit
+            residuals_raw, self.cfg.residuals_limit
         )
         self._processed_actions = torch.cat(
             [processed_tg_args, processed_residuals], dim=1
