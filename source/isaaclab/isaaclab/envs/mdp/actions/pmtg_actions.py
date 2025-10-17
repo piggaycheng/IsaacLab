@@ -46,7 +46,7 @@ class FourLegsPMTGAction(ActionTerm):
         ]
         for term in self.ik_action_terms:
             term.set_gain(self.cfg.gain)
-            term.set_residuals_scale(self.cfg.residuals_scale)
+            term.set_residuals_limit(self.cfg.residuals_limit)
 
         self.trajectory_generators = [
             HybridFourDimTrajectoryGenerator(
@@ -164,6 +164,17 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
     def joint_pos_des(self) -> torch.Tensor:
         return self._joint_pos_des
 
+    @property
+    def processed_residuals(self) -> torch.Tensor:
+        # 使用 tanh 將 residual 從 (-inf, inf) 映射到 (-1, 1)
+        tanh_residuals = torch.tanh(self._residuals)
+        # 將 (-1, 1) 的範圍縮放到目標範圍 [min, max]
+        res_min, res_max = self._residuals_limit
+        res_range = (res_max - res_min) / 2.0
+        res_bias = (res_max + res_min) / 2.0
+        scaled_residuals = tanh_residuals * res_range + res_bias
+        return scaled_residuals
+
     def process_actions(self, actions: torch.Tensor):
         super().process_actions(actions)
 
@@ -181,7 +192,7 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
             joint_pos_des = joint_pos.clone()
 
         if self._residuals is not None:
-            joint_pos_des += self._residuals * self._residuals_scale
+            joint_pos_des += self.processed_residuals
 
         self._joint_pos_des = joint_pos_des
 
@@ -195,8 +206,8 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
     def set_gain(self, gain: float):
         self._gain = gain
 
-    def set_residuals_scale(self, scale: float):
-        self._residuals_scale = scale
+    def set_residuals_limit(self, limit: tuple[float, float]):
+        self._residuals_limit = limit
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         super().reset(env_ids)
@@ -308,35 +319,33 @@ class HybridFourDimTrajectoryGenerator:
         if self.phase.numel() != batch_size:
             self.phase = self.phase.expand(batch_size).clone()
 
-        # 1. 直接讀取 CPG 參數並裁剪
+        # 1. 使用 tanh 將 CPG 參數從 (-inf, inf) 映射到 (-1, 1)
         actions_on_device = actions.to(self.device, self.dtype)
-        frequency, amp_x, amp_y, amp_z = torch.unbind(actions_on_device, dim=1)
+        tanh_actions = torch.tanh(actions_on_device)
+        frequency, amp_x, amp_y, amp_z = torch.unbind(tanh_actions, dim=1)
 
-        target_frequency = (
-            frequency * self.trajectory_generator_params.frequency_scale
-        ).clamp(
-            self.trajectory_generator_params.frequency_limit[0],
-            self.trajectory_generator_params.frequency_limit[1],
-        )
+        # 2. 將 (-1, 1) 的範圍縮放到目標範圍 [min, max]
+        # 公式: output = tanh_output * (max - min) / 2 + (max + min) / 2
+        freq_min, freq_max = self.trajectory_generator_params.frequency_limit
+        freq_range = (freq_max - freq_min) / 2.0
+        freq_bias = (freq_max + freq_min) / 2.0
+        target_frequency = frequency * freq_range + freq_bias
+
         # 將振幅視為步長/步高
-        target_amplitude_x = (
-            amp_x * self.trajectory_generator_params.step_length_x_scale
-        ).clamp(
-            self.trajectory_generator_params.step_length_x_limit[0],
-            self.trajectory_generator_params.step_length_x_limit[1],
-        )
-        target_amplitude_y = (
-            amp_y * self.trajectory_generator_params.step_length_y_scale
-        ).clamp(
-            self.trajectory_generator_params.step_length_y_limit[0],
-            self.trajectory_generator_params.step_length_y_limit[1],
-        )
-        target_amplitude_z = (
-            amp_z * self.trajectory_generator_params.step_height_scale
-        ).clamp(
-            self.trajectory_generator_params.step_height_limit[0],
-            self.trajectory_generator_params.step_height_limit[1],
-        )
+        step_x_min, step_x_max = self.trajectory_generator_params.step_length_x_limit
+        step_x_range = (step_x_max - step_x_min) / 2.0
+        step_x_bias = (step_x_max + step_x_min) / 2.0
+        target_amplitude_x = amp_x * step_x_range + step_x_bias
+
+        step_y_min, step_y_max = self.trajectory_generator_params.step_length_y_limit
+        step_y_range = (step_y_max - step_y_min) / 2.0
+        step_y_bias = (step_y_max + step_y_min) / 2.0
+        target_amplitude_y = amp_y * step_y_range + step_y_bias
+
+        step_z_min, step_z_max = self.trajectory_generator_params.step_height_limit
+        step_z_range = (step_z_max - step_z_min) / 2.0
+        step_z_bias = (step_z_max + step_z_min) / 2.0
+        target_amplitude_z = amp_z * step_z_range + step_z_bias
 
         # 2. 使用固定的占空比
         target_swing_duty_cycle = self.default_swing_duty_cycle

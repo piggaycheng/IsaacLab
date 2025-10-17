@@ -331,15 +331,6 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     class TrajectoryGeneratorCfg:
         """Configuration for the trajectory generator used in PMTG."""
 
-        frequency_scale: float = 1.0
-        """Scale factor for the frequency command. Defaults to 1.0."""
-        step_length_x_scale: float = 1.0
-        """Scale factor for the forward velocity command. Defaults to 1.0."""
-        step_length_y_scale: float = 1.0
-        """Scale factor for the lateral velocity command. Defaults to 1.0."""
-        step_height_scale: float = 1.0
-        """Scale factor for the step height command. Defaults to 1.0."""
-
         default_swing_duty_cycle: float = 0.5
         """Fixed swing duty cycle ratio. Defaults to 0.5."""
 
@@ -347,8 +338,8 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
         """Step height limits (m). Defaults to (0.0, 0.2)."""
 
         # Frequency limits
-        frequency_limit: tuple[float, float] = (0.0, 4.0)
-        """Frequency limits (Hz). Defaults to (0.0, 4.0)."""
+        frequency_limit: tuple[float, float] = (1.0, 4.0)
+        """Frequency limits (Hz). Defaults to (1.0, 4.0)."""
 
         # Step length limits
         step_length_x_limit: tuple[float, float] = (-0.4, 0.4)
@@ -383,8 +374,8 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     gain: float = 1.0
     """增益因子, 用於apply_action效果的強度"""
 
-    residuals_scale: float = 0.1
-    """關節位置殘差的縮放因子, 用於微調PMTG生成的關節位置"""
+    residuals_limit: tuple[float, float] = (-0.1, 0.1)
+    """關節位置殘差的限制範圍, 防止過大的調整"""
 
     trajectory_generator_params: TrajectoryGeneratorCfg = TrajectoryGeneratorCfg()
 
