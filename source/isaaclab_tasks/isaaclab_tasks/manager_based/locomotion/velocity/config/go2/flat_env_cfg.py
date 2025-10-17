@@ -101,7 +101,6 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
                 ),
             ],
             gain=1.0,
-            action_smoothing_alpha=1.0,
             trajectory_generator_params=mdp.FourLegsPMTGActionCfg.TrajectoryGeneratorCfg(
                 leg_hip_positions=(
                     [0.1934, 0.0465, 0.0],
@@ -192,10 +191,14 @@ class UnitreeGo2FlatEnvCfg_PMTG_v2(UnitreeGo2FlatEnvCfg_PMTG_v1):
             weight=-3.0,
             params={
                 "command_name": "base_velocity",
+                "action_name": "joint_pos",
             },
         )
         self.rewards.joint_residuals_penalty = RewTerm(
             func=mdp.pmtg_joint_residuals_l2,
-            weight=-0.025,
+            weight=-0.1,
+            params={
+                "action_name": "joint_pos",
+            },
         )
         self.rewards.standing_still = None

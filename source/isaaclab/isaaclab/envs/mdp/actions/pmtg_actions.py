@@ -86,12 +86,33 @@ class FourLegsPMTGAction(ActionTerm):
     def process_actions(self, actions: torch.Tensor):
         """16-D action space: first 4 are for trajectory generator, last 12 are joint position residuals."""
 
-        # apply action smoothing
+        # 將原始動作使用tanh處理縮放平移
         self._raw_actions[:] = actions
-        self._processed_actions = (
-            self.cfg.action_smoothing_alpha * actions
-            + (1 - self.cfg.action_smoothing_alpha) * self.processed_actions
+        frequency, amp_x, amp_y, amp_z = actions[:, :4].unbind(dim=1)
+        processed_tg_args = torch.stack(
+            [
+                self.tanh_process(
+                    frequency, self.cfg.trajectory_generator_params.frequency_limit
+                ),
+                self.tanh_process(
+                    amp_x, self.cfg.trajectory_generator_params.step_length_x_limit
+                ),
+                self.tanh_process(
+                    amp_y, self.cfg.trajectory_generator_params.step_length_y_limit
+                ),
+                self.tanh_process(
+                    amp_z, self.cfg.trajectory_generator_params.step_height_limit
+                ),
+            ],
+            dim=1,
         )
+        processed_residuals = self.tanh_process(
+            actions[:, 4:], self.cfg.residuals_limit
+        )
+        self._processed_actions = torch.cat(
+            [processed_tg_args, processed_residuals], dim=1
+        )
+
         # The first 4 actions are shared trajectory generator parameters
         tg_args = self.processed_actions[:, :4]
         # FIXME: For debug only, fix the step height to a constant value, others are zero
@@ -143,6 +164,16 @@ class FourLegsPMTGAction(ActionTerm):
             # Reset the IK action terms for the specified environments
             self.ik_action_terms[i].reset(env_ids)
 
+    def tanh_process(self, data, limit):
+        # 使用 tanh 將 data 從 (-inf, inf) 映射到 (-1, 1)
+        tanh_data = torch.tanh(data)
+        # 將 (-1, 1) 的範圍縮放到目標範圍 [min, max]
+        data_min, data_max = limit
+        data_range = (data_max - data_min) / 2.0
+        data_bias = (data_max + data_min) / 2.0
+        scaled_data = tanh_data * data_range + data_bias
+        return scaled_data
+
 
 class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction):
     def __init__(
@@ -164,17 +195,6 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
     def joint_pos_des(self) -> torch.Tensor:
         return self._joint_pos_des
 
-    @property
-    def processed_residuals(self) -> torch.Tensor:
-        # 使用 tanh 將 residual 從 (-inf, inf) 映射到 (-1, 1)
-        tanh_residuals = torch.tanh(self._residuals)
-        # 將 (-1, 1) 的範圍縮放到目標範圍 [min, max]
-        res_min, res_max = self._residuals_limit
-        res_range = (res_max - res_min) / 2.0
-        res_bias = (res_max + res_min) / 2.0
-        scaled_residuals = tanh_residuals * res_range + res_bias
-        return scaled_residuals
-
     def process_actions(self, actions: torch.Tensor):
         super().process_actions(actions)
 
@@ -192,7 +212,7 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
             joint_pos_des = joint_pos.clone()
 
         if self._residuals is not None:
-            joint_pos_des += self.processed_residuals
+            joint_pos_des += self._residuals
 
         self._joint_pos_des = joint_pos_des
 
@@ -321,38 +341,14 @@ class HybridFourDimTrajectoryGenerator:
 
         # 1. 使用 tanh 將 CPG 參數從 (-inf, inf) 映射到 (-1, 1)
         actions_on_device = actions.to(self.device, self.dtype)
-        tanh_actions = torch.tanh(actions_on_device)
-        frequency, amp_x, amp_y, amp_z = torch.unbind(tanh_actions, dim=1)
-
-        # 2. 將 (-1, 1) 的範圍縮放到目標範圍 [min, max]
-        # 公式: output = tanh_output * (max - min) / 2 + (max + min) / 2
-        freq_min, freq_max = self.trajectory_generator_params.frequency_limit
-        freq_range = (freq_max - freq_min) / 2.0
-        freq_bias = (freq_max + freq_min) / 2.0
-        target_frequency = frequency * freq_range + freq_bias
-
-        # 將振幅視為步長/步高
-        step_x_min, step_x_max = self.trajectory_generator_params.step_length_x_limit
-        step_x_range = (step_x_max - step_x_min) / 2.0
-        step_x_bias = (step_x_max + step_x_min) / 2.0
-        target_amplitude_x = amp_x * step_x_range + step_x_bias
-
-        step_y_min, step_y_max = self.trajectory_generator_params.step_length_y_limit
-        step_y_range = (step_y_max - step_y_min) / 2.0
-        step_y_bias = (step_y_max + step_y_min) / 2.0
-        target_amplitude_y = amp_y * step_y_range + step_y_bias
-
-        step_z_min, step_z_max = self.trajectory_generator_params.step_height_limit
-        step_z_range = (step_z_max - step_z_min) / 2.0
-        step_z_bias = (step_z_max + step_z_min) / 2.0
-        target_amplitude_z = amp_z * step_z_range + step_z_bias
+        frequency, amp_x, amp_y, amp_z = torch.unbind(actions_on_device, dim=1)
 
         # 2. 使用固定的占空比
         target_swing_duty_cycle = self.default_swing_duty_cycle
         target_stance_duty_cycle = 1.0 - target_swing_duty_cycle
 
         # 3. 更新相位並計算軌跡
-        self._update_phase(target_frequency, dt)
+        self._update_phase(frequency, dt)
 
         # --- 使用 torch.where 取代 if/else 邏輯 ---
         is_swing = self.phase < target_swing_duty_cycle
@@ -364,9 +360,7 @@ class HybridFourDimTrajectoryGenerator:
         ) / target_stance_duty_cycle
 
         # --- Z 軸軌跡 (由振幅 Az 控制) ---
-        z_swing_offset = (
-            0.5 * target_amplitude_z * (1 - torch.cos(2 * torch.pi * phase_in_swing))
-        )
+        z_swing_offset = 0.5 * amp_z * (1 - torch.cos(2 * torch.pi * phase_in_swing))
         z_stance_offset = torch.zeros_like(z_swing_offset)
         z_offset = torch.where(is_swing, z_swing_offset, z_stance_offset)
         # 最終 Z 軸位置 = 預設高度 (偏移量 O_z) + 軌跡
@@ -374,12 +368,12 @@ class HybridFourDimTrajectoryGenerator:
 
         # --- X, Y 軸軌跡 (由振幅 Ax, Ay 控制) ---
         swing_multiplier = -0.5 * torch.cos(torch.pi * phase_in_swing)
-        x_swing = target_amplitude_x * swing_multiplier
-        y_swing = target_amplitude_y * swing_multiplier
+        x_swing = amp_x * swing_multiplier
+        y_swing = amp_y * swing_multiplier
 
         stance_multiplier = 0.5 * (1 - 2 * phase_in_stance)
-        x_stance = target_amplitude_x * stance_multiplier
-        y_stance = target_amplitude_y * stance_multiplier
+        x_stance = amp_x * stance_multiplier
+        y_stance = amp_y * stance_multiplier
 
         x_motion = torch.where(is_swing, x_swing, x_stance)
         y_motion = torch.where(is_swing, y_swing, y_stance)

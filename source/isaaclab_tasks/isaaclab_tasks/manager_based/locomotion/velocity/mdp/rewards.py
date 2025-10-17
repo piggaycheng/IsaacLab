@@ -12,12 +12,13 @@ specify the reward function and its parameters.
 from __future__ import annotations
 
 import torch
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from isaaclab.envs import mdp
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import ContactSensor
 from isaaclab.utils.math import quat_apply_inverse, yaw_quat
+from isaaclab.envs.mdp.actions.pmtg_actions import FourLegsPMTGAction
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -120,6 +121,7 @@ def pmtg_standing_trajectory_action_l2(
     env: ManagerBasedRLEnv,
     command_name: str,
     command_threshold: float = 0.06,
+    action_name: str = "joint_pos",
 ) -> torch.Tensor:
     """
     Penalizes non-zero actions when the command is to stand still.
@@ -132,9 +134,10 @@ def pmtg_standing_trajectory_action_l2(
     # 2. 獲取策略網路輸出的原始動作 (actions)
     # action_manager 會儲存策略輸出的動作，維度為 (num_envs, action_dim)
     # 在您的 PMTG 設定中，這是一個 16 維的向量
-    actions = env.action_manager.action
+    action_term = env.action_manager.get_term(action_name)
+    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
     # 只取出前4個維度，也就是軌跡生成器的參數
-    trajectory_actions = actions[:, :4]
+    trajectory_actions = pmtg_action_term.processed_actions[:, :4]
 
     # 3. 判斷哪些環境的指令是「站立」
     # 我們可以計算指令向量的範數 (norm)，如果接近於零，就視為站立指令。
@@ -151,8 +154,10 @@ def pmtg_standing_trajectory_action_l2(
     return trajectory_action_penalty * is_standing_command
 
 
-def pmtg_joint_residuals_l2(env: ManagerBasedRLEnv) -> torch.Tensor:
+def pmtg_joint_residuals_l2(env: ManagerBasedRLEnv, action_name: str = "joint_pos") -> torch.Tensor:
     """Penalizes the L2 norm of the joint position residuals."""
     # PMTG action 的後 12 個維度是 residuals
-    residuals = env.action_manager.action[:, 4:]
+    action_term = env.action_manager.get_term(action_name)
+    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
+    residuals = pmtg_action_term.processed_actions[:, 4:]
     return torch.sum(torch.square(residuals), dim=1)

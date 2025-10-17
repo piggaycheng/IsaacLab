@@ -378,6 +378,3 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     """關節位置殘差的限制範圍, 防止過大的調整"""
 
     trajectory_generator_params: TrajectoryGeneratorCfg = TrajectoryGeneratorCfg()
-
-    action_smoothing_alpha: float = 1.0
-    """動作平滑的alpha值, 用於控制動作變化的平滑度"""
