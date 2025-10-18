@@ -94,12 +94,11 @@ class FourLegsPMTGAction(ActionTerm):
         command_threshold = self.cfg.command_threshold
         commands = self._env.command_manager.get_command(command_name)
         command_norm = torch.norm(commands[:, :3], dim=1)
-        is_standing_command = (command_norm < command_threshold).unsqueeze(1) # Shape: (num_envs, 1)
+        is_standing_command = (command_norm < command_threshold).unsqueeze(1)  # Shape: (num_envs, 1)
 
         # Process trajectory generator arguments
         tg_actions_raw = actions[:, :4]
         # When standing, force trajectory generator actions to zero
-        tg_actions_raw = torch.where(is_standing_command, torch.zeros_like(tg_actions_raw), tg_actions_raw)
         frequency, amp_x, amp_y, amp_z = tg_actions_raw.unbind(dim=1)
         processed_tg_args = torch.stack(
             [
@@ -123,6 +122,7 @@ class FourLegsPMTGAction(ActionTerm):
         processed_residuals = self.tanh_process(
             residuals_raw, self.cfg.residuals_limit
         )
+        processed_tg_args = processed_tg_args * (~is_standing_command)
         self._processed_actions = torch.cat(
             [processed_tg_args, processed_residuals], dim=1
         )
