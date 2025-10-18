@@ -183,6 +183,39 @@ def pmtg_standing_residuals_l2(
     return residual_penalty * is_standing_command
 
 
+def pmtg_walk_z_amplitude_reward(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    command_threshold: float = 0.06,
+    action_name: str = "joint_pos",
+) -> torch.Tensor:
+    """
+    Rewards the use of z-axis amplitude in the trajectory generator when walking.
+    This encourages the policy to lift the legs using the trajectory generator's
+    z-amplitude instead of relying on residuals.
+    The reward is squared to strongly incentivize larger amplitudes.
+    """
+    # 1. Get the current command
+    commands = env.command_manager.get_command(command_name)
+
+    # 2. Get the processed actions from the PMTG action term
+    action_term = env.action_manager.get_term(action_name)
+    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
+    # The 4th dimension is the z-amplitude (amp_z)
+    amp_z = pmtg_action_term.processed_actions[:, 3]
+
+    # 3. Determine when the command is to walk (not stand still)
+    command_norm = torch.norm(commands[:, :3], dim=1)
+    is_walking_command = command_norm > command_threshold
+
+    # 4. Calculate the reward for using z-amplitude
+    # The reward is the squared value of amp_z to strongly encourage larger values.
+    z_amplitude_reward = torch.square(amp_z)
+
+    # 5. Apply the reward only when walking
+    return z_amplitude_reward * is_walking_command
+
+
 def pmtg_joint_residuals_l2(env: ManagerBasedRLEnv, action_name: str = "joint_pos") -> torch.Tensor:
     """Penalizes the L2 norm of the joint position residuals."""
     # PMTG action 的後 12 個維度是 residuals
