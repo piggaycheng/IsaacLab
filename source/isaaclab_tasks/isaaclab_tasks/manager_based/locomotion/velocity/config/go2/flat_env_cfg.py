@@ -193,22 +193,22 @@ class UnitreeGo2FlatEnvCfg_PMTG_v2(UnitreeGo2FlatEnvCfg_PMTG_v1):
         #         "action_name": "joint_pos",
         #     },
         # )
-        self.rewards.amplitude_residuals_ratio = RewTerm(
-            func=mdp.pmtg_amplitude_residual_ratio_l2,
-            weight=1.0,
-            params={
-                "command_name": "base_velocity",
-                "action_name": "joint_pos",
-            },
-        )
-        self.rewards.conditional_joint_residuals_penalty = RewTerm(
-            func=mdp.conditional_joint_residuals_l2,
-            weight=-0.1,
-            params={
-                "action_name": "joint_pos",
-                "command_name": "base_velocity",
-            },
-        )
+        # self.rewards.amplitude_residuals_ratio = RewTerm(
+        #     func=mdp.pmtg_amplitude_residual_ratio_l2,
+        #     weight=1.0,
+        #     params={
+        #         "command_name": "base_velocity",
+        #         "action_name": "joint_pos",
+        #     },
+        # )
+        # self.rewards.conditional_joint_residuals_penalty = RewTerm(
+        #     func=mdp.conditional_joint_residuals_l2,
+        #     weight=-0.1,
+        #     params={
+        #         "action_name": "joint_pos",
+        #         "command_name": "base_velocity",
+        #     },
+        # )
         self.rewards.feet_slide_penalty = RewTerm(
             func=mdp.feet_slide,
             weight=-1.0,
