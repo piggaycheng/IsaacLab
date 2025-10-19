@@ -117,105 +117,6 @@ def stand_still_joint_deviation_l1(
     return mdp.joint_deviation_l1(env, asset_cfg) * (torch.norm(command[:, :2], dim=1) < command_threshold)
 
 
-def pmtg_standing_trajectory_action_l2(
-    env: ManagerBasedRLEnv,
-    command_name: str,
-    command_threshold: float = 0.06,
-    action_name: str = "joint_pos",
-) -> torch.Tensor:
-    """
-    Penalizes non-zero actions when the command is to stand still.
-    This encourages the policy to output zero actions when no motion is desired.
-    """
-    # 1. 獲取當前的指令 (commands)
-    # command_manager 通常會儲存當前的指令，維度為 (num_envs, command_dim)
-    commands = env.command_manager.get_command(command_name)
-
-    # 2. 獲取策略網路輸出的原始動作 (actions)
-    # action_manager 會儲存策略輸出的動作，維度為 (num_envs, action_dim)
-    # 在您的 PMTG 設定中，這是一個 16 維的向量
-    action_term = env.action_manager.get_term(action_name)
-    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
-    # 只取出前4個維度，也就是軌跡生成器的參數
-    trajectory_actions = pmtg_action_term.processed_actions[:, :4]
-
-    # 3. 判斷哪些環境的指令是「站立」
-    # 我們可以計算指令向量的範數 (norm)，如果接近於零，就視為站立指令。
-    # 這裡我們只關心線速度和角速度，通常是前 3 個維度 (vx, vy, yaw_rate)
-    command_norm = torch.norm(commands[:, :3], dim=1)
-    # 設定一個小的閾值來判斷是否為零指令
-    is_standing_command = command_norm < command_threshold
-
-    # 4. 計算動作的懲罰
-    # 我們可以使用動作向量的平方 L2 範數來量化動作的大小。
-    # 這會懲罰任何非零的動作。
-    trajectory_action_penalty = torch.sum(torch.square(trajectory_actions), dim=1)
-
-    return trajectory_action_penalty * is_standing_command
-
-
-def pmtg_standing_residuals_l2(
-    env: ManagerBasedRLEnv,
-    command_name: str,
-    command_threshold: float = 0.06,
-    action_name: str = "joint_pos",
-) -> torch.Tensor:
-    """
-    Penalizes non-zero joint residuals when the command is to stand still.
-    This encourages the policy to output zero residuals when no motion is desired.
-    """
-    # 1. Get the current command
-    commands = env.command_manager.get_command(command_name)
-
-    # 2. Get the joint residuals from the action
-    action_term = env.action_manager.get_term(action_name)
-    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
-    residuals = pmtg_action_term.processed_actions[:, 4:]
-
-    # 3. Determine when the command is to stand still
-    command_norm = torch.norm(commands[:, :3], dim=1)
-    is_standing_command = command_norm < command_threshold
-
-    # 4. Calculate the penalty on residuals
-    residual_penalty = torch.sum(torch.square(residuals), dim=1)
-
-    # 5. Apply the penalty only when standing still
-    return residual_penalty * is_standing_command
-
-
-def pmtg_walk_z_amplitude_reward(
-    env: ManagerBasedRLEnv,
-    command_name: str,
-    command_threshold: float = 0.06,
-    action_name: str = "joint_pos",
-) -> torch.Tensor:
-    """
-    Rewards the use of z-axis amplitude in the trajectory generator when walking.
-    This encourages the policy to lift the legs using the trajectory generator's
-    z-amplitude instead of relying on residuals.
-    The reward is squared to strongly incentivize larger amplitudes.
-    """
-    # 1. Get the current command
-    commands = env.command_manager.get_command(command_name)
-
-    # 2. Get the processed actions from the PMTG action term
-    action_term = env.action_manager.get_term(action_name)
-    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
-    # The 4th dimension is the z-amplitude (amp_z)
-    amp_z = pmtg_action_term.processed_actions[:, 3]
-
-    # 3. Determine when the command is to walk (not stand still)
-    command_norm = torch.norm(commands[:, :3], dim=1)
-    is_walking_command = command_norm > command_threshold
-
-    # 4. Calculate the reward for using z-amplitude
-    # The reward is the squared value of amp_z to strongly encourage larger values.
-    z_amplitude_reward = torch.square(amp_z)
-
-    # 5. Apply the reward only when walking
-    return z_amplitude_reward * is_walking_command
-
-
 def pmtg_joint_residuals_l2(env: ManagerBasedRLEnv, action_name: str = "joint_pos") -> torch.Tensor:
     """Penalizes the L2 norm of the joint position residuals."""
     # PMTG action 的後 12 個維度是 residuals
@@ -223,3 +124,75 @@ def pmtg_joint_residuals_l2(env: ManagerBasedRLEnv, action_name: str = "joint_po
     pmtg_action_term = cast(FourLegsPMTGAction, action_term)
     residuals = pmtg_action_term.processed_actions[:, 4:]
     return torch.sum(torch.square(residuals), dim=1)
+
+
+def pmtg_amplitude_residual_ratio_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    action_name: str = "joint_pos",
+    command_threshold: float = 0.06,
+    epsilon: float = 1e-6,
+) -> torch.Tensor:
+    """
+    Rewards a higher ratio of amplitude usage compared to residual usage, using a squared (L2) reward.
+
+    This encourages the policy to rely on the trajectory generator for primary movements,
+    rather than simply maximizing amplitudes. The reward is proportional to the square of:
+    amp_energy / (amp_energy + residual_energy).
+    """
+    # 1. Check if the robot is commanded to move
+    commands = env.command_manager.get_command(command_name)
+    command_norm = torch.norm(commands[:, :3], dim=1)
+    is_moving_command = command_norm > command_threshold
+
+    # If not moving, no reward
+    if not torch.any(is_moving_command):
+        return torch.zeros_like(command_norm)
+
+    # 2. Get amplitudes and residuals from the action term
+    action_term = env.action_manager.get_term(action_name)
+    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
+
+    # Amplitudes are the 2nd, 3rd, and 4th params of the trajectory generator
+    amplitudes = pmtg_action_term.processed_actions[:, 1:4]
+    residuals = pmtg_action_term.processed_actions[:, 4:]
+
+    # 3. Calculate the energy (sum of squares) for both components
+    amp_energy = torch.sum(torch.square(amplitudes), dim=1)
+    residual_energy = torch.sum(torch.square(residuals), dim=1)
+
+    # 4. Calculate the ratio reward
+    # This ratio is between 0 and 1
+    ratio_reward = amp_energy / (amp_energy + residual_energy + epsilon)
+
+    # 5. Apply the squared reward only when commanded to move
+    return torch.square(ratio_reward) * is_moving_command
+
+
+def conditional_joint_residuals_l2(
+    env: ManagerBasedRLEnv,
+    action_name: str = "joint_pos",
+    command_name: str = "base_velocity",
+    yaw_command_threshold: float = 0.25,
+    linear_penalty_scale: float = 1.0,
+    turn_penalty_scale: float = 0.1,
+) -> torch.Tensor:
+    """
+    Penalizes the L2 norm of joint residuals, applying a smaller penalty during turns.
+    """
+    commands = env.command_manager.get_command(command_name)
+    yaw_command = commands[:, 2]
+
+    action_term = env.action_manager.get_term(action_name)
+    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
+    residuals = pmtg_action_term.processed_actions[:, 4:]
+
+    residual_penalty = torch.sum(torch.square(residuals), dim=1)
+
+    # Check if the main command is for turning
+    is_turning = torch.abs(yaw_command) > yaw_command_threshold
+
+    # Apply a higher penalty for linear motion and a lower one for turning
+    penalty_scale = torch.where(is_turning, turn_penalty_scale, linear_penalty_scale)
+
+    return residual_penalty * penalty_scale
