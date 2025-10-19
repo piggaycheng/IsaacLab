@@ -178,7 +178,7 @@ class UnitreeGo2FlatEnvCfg_PMTG_v2(UnitreeGo2FlatEnvCfg_PMTG_v1):
     def __post_init__(self) -> None:
         super().__post_init__()
 
-        self.commands.base_velocity.rel_standing_envs = 0.2
+        self.commands.base_velocity.rel_standing_envs = 0.1
 
         self.rewards.track_lin_vel_xy_exp.weight = 5.0
         self.rewards.track_ang_vel_z_exp.weight = 5.0
@@ -186,27 +186,50 @@ class UnitreeGo2FlatEnvCfg_PMTG_v2(UnitreeGo2FlatEnvCfg_PMTG_v1):
             func=mdp.is_alive,
             weight=1.0,
         )
-        self.rewards.standing_trajectory_action_penalty = RewTerm(
-            func=mdp.pmtg_standing_trajectory_action_l2,
-            weight=-3.0,
+        # self.rewards.joint_residuals_penalty = RewTerm(
+        #     func=mdp.pmtg_joint_residuals_l2,
+        #     weight=-0.1,
+        #     params={
+        #         "action_name": "joint_pos",
+        #     },
+        # )
+        self.rewards.amplitude_residuals_ratio = RewTerm(
+            func=mdp.pmtg_amplitude_residual_ratio_l2,
+            weight=1.0,
             params={
                 "command_name": "base_velocity",
                 "action_name": "joint_pos",
             },
         )
-        self.rewards.standing_residuals_action_penalty = RewTerm(
-            func=mdp.pmtg_standing_residuals_l2,
-            weight=-2.0,
-            params={
-                "command_name": "base_velocity",
-                "action_name": "joint_pos",
-            },
-        )
-        self.rewards.joint_residuals_penalty = RewTerm(
-            func=mdp.pmtg_joint_residuals_l2,
+        self.rewards.conditional_joint_residuals_penalty = RewTerm(
+            func=mdp.conditional_joint_residuals_l2,
             weight=-0.1,
             params={
                 "action_name": "joint_pos",
+                "command_name": "base_velocity",
             },
         )
+        self.rewards.feet_slide_penalty = RewTerm(
+            func=mdp.feet_slide,
+            weight=-1.0,
+            params={
+                "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+            }
+        )
         self.rewards.standing_still = None
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v2_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v2):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # make a smaller scene for play
+        self.scene.num_envs = 50
+        self.scene.env_spacing = 2.5
+        # disable randomization for play
+        self.observations.policy.enable_corruption = False
+        # remove random pushing event
+        self.events.base_external_force_torque = None
+        self.events.push_robot = None
