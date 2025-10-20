@@ -12,12 +12,13 @@ specify the reward function and its parameters.
 from __future__ import annotations
 
 import torch
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from isaaclab.envs import mdp
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import ContactSensor
 from isaaclab.utils.math import quat_apply_inverse, yaw_quat
+from isaaclab.envs.mdp.actions.pmtg_actions import FourLegsPMTGAction
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -114,3 +115,84 @@ def stand_still_joint_deviation_l1(
     command = env.command_manager.get_command(command_name)
     # Penalize motion when command is nearly zero.
     return mdp.joint_deviation_l1(env, asset_cfg) * (torch.norm(command[:, :2], dim=1) < command_threshold)
+
+
+def pmtg_joint_residuals_l2(env: ManagerBasedRLEnv, action_name: str = "joint_pos") -> torch.Tensor:
+    """Penalizes the L2 norm of the joint position residuals."""
+    # PMTG action 的後 12 個維度是 residuals
+    action_term = env.action_manager.get_term(action_name)
+    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
+    residuals = pmtg_action_term.processed_actions[:, 4:]
+    return torch.sum(torch.square(residuals), dim=1)
+
+
+def pmtg_amplitude_residual_ratio_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    action_name: str = "joint_pos",
+    command_threshold: float = 0.06,
+    epsilon: float = 1e-6,
+) -> torch.Tensor:
+    """
+    Rewards a higher ratio of amplitude usage compared to residual usage, using a squared (L2) reward.
+
+    This encourages the policy to rely on the trajectory generator for primary movements,
+    rather than simply maximizing amplitudes. The reward is proportional to the square of:
+    amp_energy / (amp_energy + residual_energy).
+    """
+    # 1. Check if the robot is commanded to move
+    commands = env.command_manager.get_command(command_name)
+    command_norm = torch.norm(commands[:, :3], dim=1)
+    is_moving_command = command_norm > command_threshold
+
+    # If not moving, no reward
+    if not torch.any(is_moving_command):
+        return torch.zeros_like(command_norm)
+
+    # 2. Get amplitudes and residuals from the action term
+    action_term = env.action_manager.get_term(action_name)
+    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
+
+    # Amplitudes are the 2nd, 3rd, and 4th params of the trajectory generator
+    amplitudes = pmtg_action_term.processed_actions[:, 1:4]
+    residuals = pmtg_action_term.processed_actions[:, 4:]
+
+    # 3. Calculate the energy (sum of squares) for both components
+    amp_energy = torch.sum(torch.square(amplitudes), dim=1)
+    residual_energy = torch.sum(torch.square(residuals), dim=1)
+
+    # 4. Calculate the ratio reward
+    # This ratio is between 0 and 1
+    ratio_reward = amp_energy / (amp_energy + residual_energy + epsilon)
+
+    # 5. Apply the squared reward only when commanded to move
+    return torch.square(ratio_reward) * is_moving_command
+
+
+def conditional_joint_residuals_l2(
+    env: ManagerBasedRLEnv,
+    action_name: str = "joint_pos",
+    command_name: str = "base_velocity",
+    yaw_command_threshold: float = 0.25,
+    linear_penalty_scale: float = 1.0,
+    turn_penalty_scale: float = 0.1,
+) -> torch.Tensor:
+    """
+    Penalizes the L2 norm of joint residuals, applying a smaller penalty during turns.
+    """
+    commands = env.command_manager.get_command(command_name)
+    yaw_command = commands[:, 2]
+
+    action_term = env.action_manager.get_term(action_name)
+    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
+    residuals = pmtg_action_term.processed_actions[:, 4:]
+
+    residual_penalty = torch.sum(torch.square(residuals), dim=1)
+
+    # Check if the main command is for turning
+    is_turning = torch.abs(yaw_command) > yaw_command_threshold
+
+    # Apply a higher penalty for linear motion and a lower one for turning
+    penalty_scale = torch.where(is_turning, turn_penalty_scale, linear_penalty_scale)
+
+    return residual_penalty * penalty_scale

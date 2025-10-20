@@ -5,7 +5,12 @@
 
 from isaaclab.utils import configclass
 
-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
+from isaaclab_rl.rsl_rl import (
+    RslRlOnPolicyRunnerCfg,
+    RslRlPpoActorCriticCfg,
+    RslRlPpoAlgorithmCfg,
+    RslRlPpoActorCriticRecurrentCfg,
+)
 
 
 @configclass
@@ -46,3 +51,32 @@ class UnitreeGo2FlatPPORunnerCfg(UnitreeGo2RoughPPORunnerCfg):
         self.experiment_name = "unitree_go2_flat"
         self.policy.actor_hidden_dims = [128, 128, 128]
         self.policy.critic_hidden_dims = [128, 128, 128]
+
+
+@configclass
+class UnitreeGo2PMTGPPORunnerCfg(UnitreeGo2RoughPPORunnerCfg):
+    def __post_init__(self):
+        super().__post_init__()
+
+        self.max_iterations = 3000
+        self.experiment_name = "unitree_go2_pmtg"
+        self.policy.actor_hidden_dims = [512, 256, 128]
+        self.policy.critic_hidden_dims = [512, 256, 128]
+
+
+@configclass
+class UnitreeGo2PMTGRecurrentPPORunnerCfg(UnitreeGo2RoughPPORunnerCfg):
+    def __post_init__(self):
+        super().__post_init__()
+
+        self.max_iterations = 3000
+        self.experiment_name = "unitree_go2_pmtg_recurrent"
+        self.policy = RslRlPpoActorCriticRecurrentCfg(
+            init_noise_std=1.0,
+            actor_hidden_dims=[512, 256, 128],
+            critic_hidden_dims=[512, 256, 128],
+            activation="elu",
+            rnn_type="gru",
+            rnn_hidden_dim=128,
+            rnn_num_layers=1,
+        )

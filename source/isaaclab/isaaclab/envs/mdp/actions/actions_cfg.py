@@ -331,44 +331,22 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     class TrajectoryGeneratorCfg:
         """Configuration for the trajectory generator used in PMTG."""
 
-        stance_vx_scale: float = 1.0
-        """Scale factor for the forward velocity command. Defaults to 1.0."""
-        stance_vy_scale: float = 1.0
-        """Scale factor for the lateral velocity command. Defaults to 1.0."""
-        yaw_rate_scale: float = 1.0
-        """Scale factor for the yaw rate command. Defaults to 1.0."""
-        step_height_scale: float = 1.0
-        """Scale factor for the step height command. Defaults to 1.0."""
-
-        # Frequency and duty cycle parameters
-        base_frequency: float = 1.5
-        """Base frequency for gait generation (Hz). Defaults to 1.5."""
-        velocity_to_freq_gain: float = 0.8
-        """Gain for converting velocity to additional frequency. Defaults to 0.8."""
         default_swing_duty_cycle: float = 0.5
         """Fixed swing duty cycle ratio. Defaults to 0.5."""
 
-        # Numerical stability
-        eps: float = 1e-6
-        """Small value to avoid division by zero. Defaults to 1e-6."""
-
-        # Velocity limits
-        stance_vx_limit: tuple[float, float] = (-0.8, 0.8)
-        """Forward velocity limits (m/s). Defaults to (-0.8, 0.8)."""
-        stance_vy_limit: tuple[float, float] = (-0.5, 0.5)
-        """Lateral velocity limits (m/s). Defaults to (-0.5, 0.5)."""
-        yaw_rate_limit: tuple[float, float] = (-1.5, 1.5)
-        """Yaw rate limits (rad/s). Defaults to (-1.5, 1.5)."""
-        step_height_limit: tuple[float, float] = (0.02, 0.2)
-        """Step height limits (m). Defaults to (0.02, 0.2)."""
+        step_height_limit: tuple[float, float] = (0.0, 0.2)
+        """Step height limits (m). Defaults to (0.0, 0.2)."""
 
         # Frequency limits
         frequency_limit: tuple[float, float] = (1.0, 4.0)
         """Frequency limits (Hz). Defaults to (1.0, 4.0)."""
 
         # Step length limits
-        step_length_limit: tuple[float, float] = (-0.3, 0.3)
-        """Step length limits (m). Defaults to (-0.3, 0.3)."""
+        step_length_x_limit: tuple[float, float] = (-0.4, 0.4)
+        """X step length limits (m). Defaults to (-0.4, 0.4)."""
+
+        step_length_y_limit: tuple[float, float] = (-0.2, 0.2)
+        """Y step length limits (m). Defaults to (-0.2, 0.2)."""
 
         foot_default_heights: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
         """預設的腳部高度, 用於計算Z軸位置"""
@@ -396,10 +374,12 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     gain: float = 1.0
     """增益因子, 用於apply_action效果的強度"""
 
-    residuals_scale: float = 0.1
-    """關節位置殘差的縮放因子, 用於微調PMTG生成的關節位置"""
+    residuals_limit: tuple[float, float] = (-0.1, 0.1)
+    """關節位置殘差的限制範圍, 防止過大的調整"""
 
     trajectory_generator_params: TrajectoryGeneratorCfg = TrajectoryGeneratorCfg()
 
-    action_smoothing_alpha: float = 1.0
-    """動作平滑的alpha值, 用於控制動作變化的平滑度"""
+    command_name: str = "base_velocity"
+    """The name of the command to use for the trajectory generator. Defaults to "base_velocity"."""
+    command_threshold: float = 0.1
+    """Threshold to consider command as zero command. Defaults to 0.1."""

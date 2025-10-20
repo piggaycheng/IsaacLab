@@ -6,7 +6,12 @@
 from isaaclab.utils import configclass
 
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
+from isaaclab.managers import RewardTermCfg as RewTerm
+from isaaclab.managers import SceneEntityCfg
+from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
+from isaaclab.sensors import ImuCfg
 
 from .rough_env_cfg import UnitreeGo2RoughEnvCfg
 
@@ -99,26 +104,37 @@ class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
                 ),
             ],
             gain=1.0,
-            residuals_scale=0.02,
-            action_smoothing_alpha=1.0,
             trajectory_generator_params=mdp.FourLegsPMTGActionCfg.TrajectoryGeneratorCfg(
-                leg_hip_positions=([0.1934, 0.0465, 0.0], [0.1934, -0.0465, 0.0], [-0.1934, 0.0465, 0.0], [-0.1934, -0.0465, 0.0]),  # FL, FR, RL, RR
-                foot_default_heights=(-0.30, -0.30, -0.33, -0.33),
-                leg_y_offsets=(0.1, -0.1, 0.1, -0.1),
-                leg_x_offsets=(0.0, 0.0, -0.1, -0.1),
-            )
+                leg_hip_positions=(
+                    [0.1934, 0.0465, 0.0],
+                    [0.1934, -0.0465, 0.0],
+                    [-0.1934, 0.0465, 0.0],
+                    [-0.1934, -0.0465, 0.0],
+                ),  # FL, FR, RL, RR
+                foot_default_heights=(-0.3, -0.3, -0.32, -0.32),
+                leg_y_offsets=(0.12, -0.12, 0.12, -0.12),
+                leg_x_offsets=(0.02, 0.02, -0.05, -0.05),
+            ),
         )
 
         self.rewards.track_lin_vel_xy_exp.weight = 2.0
         self.rewards.track_ang_vel_z_exp.weight = 1.0
         self.rewards.dof_pos_limits.weight = -2.0
-
-        self.observations.policy.pmtg_phase = ObsTerm(
-            func=mdp.trajectory_generator_phase,
+        self.rewards.standing_still = RewTerm(
+            func=mdp.stand_still_joint_deviation_l1,
+            weight=-2.0,
             params={
-                "action_name": "joint_pos",
+                "command_name": "base_velocity",
+                "asset_cfg": SceneEntityCfg("robot", joint_names=[".*"]),
             },
         )
+
+        # self.observations.policy.pmtg_phase = ObsTerm(
+        #     func=mdp.trajectory_generator_phase,
+        #     params={
+        #         "action_name": "joint_pos",
+        #     },
+        # )
 
 
 @configclass
@@ -134,3 +150,124 @@ class UnitreeGo2FlatEnvCfg_PMTG_PLAY(UnitreeGo2FlatEnvCfg_PMTG):
         # remove random pushing event
         self.events.base_external_force_torque = None
         self.events.push_robot = None
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v1(UnitreeGo2FlatEnvCfg_PMTG):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.observations.policy.pmtg_phase = ObsTerm(
+            func=mdp.trajectory_generator_phase,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
+
+        self.observations.policy.pmtg_joint_pos_des = ObsTerm(
+            func=mdp.trajectory_generator_joint_pos_des,
+            params={
+                "action_name": "joint_pos",
+            },
+            history_length=2,
+        )
+
+        self.observations.policy.joint_pos.history_length = 3
+        self.observations.policy.joint_vel.history_length = 2
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v2(UnitreeGo2FlatEnvCfg_PMTG_v1):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.commands.base_velocity.rel_standing_envs = 0.1
+
+        self.rewards.track_lin_vel_xy_exp.weight = 5.0
+        self.rewards.track_ang_vel_z_exp.weight = 5.0
+        self.rewards.alive = RewTerm(
+            func=mdp.is_alive,
+            weight=1.0,
+        )
+        # self.rewards.joint_residuals_penalty = RewTerm(
+        #     func=mdp.pmtg_joint_residuals_l2,
+        #     weight=-0.1,
+        #     params={
+        #         "action_name": "joint_pos",
+        #     },
+        # )
+        # self.rewards.amplitude_residuals_ratio = RewTerm(
+        #     func=mdp.pmtg_amplitude_residual_ratio_l2,
+        #     weight=1.0,
+        #     params={
+        #         "command_name": "base_velocity",
+        #         "action_name": "joint_pos",
+        #     },
+        # )
+        # self.rewards.conditional_joint_residuals_penalty = RewTerm(
+        #     func=mdp.conditional_joint_residuals_l2,
+        #     weight=-0.1,
+        #     params={
+        #         "action_name": "joint_pos",
+        #         "command_name": "base_velocity",
+        #     },
+        # )
+        self.rewards.feet_slide_penalty = RewTerm(
+            func=mdp.feet_slide,
+            weight=-1.0,
+            params={
+                "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+            },
+        )
+        self.rewards.standing_still = None
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v2_1(UnitreeGo2FlatEnvCfg_PMTG_v2):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.observations.policy.pmtg_joint_pos_des.history_length = 0
+        self.observations.policy.joint_pos.history_length = 0
+        self.observations.policy.joint_vel.history_length = 0
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v2_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v2):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # make a smaller scene for play
+        self.scene.num_envs = 50
+        self.scene.env_spacing = 2.5
+        # disable randomization for play
+        self.observations.policy.enable_corruption = False
+        # remove random pushing event
+        self.events.base_external_force_torque = None
+        self.events.push_robot = None
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v3(UnitreeGo2FlatEnvCfg_PMTG_v2):
+    @configclass
+    class CriticObservationCfg(ObsGroup):
+        base_lin_vel = ObsTerm(
+            func=mdp.base_lin_vel, noise=Unoise(n_min=-0.1, n_max=0.1)
+        )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.scene.imu = ImuCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/base",
+            update_period=0.0,
+        )
+
+        self.observations.policy.imu_lin_acc = ObsTerm(
+            func=mdp.imu_lin_acc, noise=Unoise(n_min=-0.1, n_max=0.1)
+        )
+        self.observations.policy.base_lin_vel = None
+        self.observations.critic = self.CriticObservationCfg()
+
+        self.rewards.alive = None
