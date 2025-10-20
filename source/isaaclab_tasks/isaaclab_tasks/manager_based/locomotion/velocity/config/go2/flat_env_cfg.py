@@ -12,6 +12,7 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 from isaaclab.sensors import ImuCfg
+from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import ObservationsCfg
 
 from .rough_env_cfg import UnitreeGo2RoughEnvCfg
 
@@ -251,10 +252,23 @@ class UnitreeGo2FlatEnvCfg_PMTG_v2_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v2):
 @configclass
 class UnitreeGo2FlatEnvCfg_PMTG_v3(UnitreeGo2FlatEnvCfg_PMTG_v2):
     @configclass
-    class CriticObservationCfg(ObsGroup):
-        base_lin_vel = ObsTerm(
-            func=mdp.base_lin_vel, noise=Unoise(n_min=-0.1, n_max=0.1)
+    class CriticObservationCfg(ObservationsCfg.PolicyCfg):
+        imu_lin_acc = ObsTerm(
+            func=mdp.imu_lin_acc, noise=Unoise(n_min=-0.1, n_max=0.1)
         )
+        pmtg_phase = ObsTerm(
+            func=mdp.trajectory_generator_phase,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
+        pmtg_joint_pos_des = ObsTerm(
+            func=mdp.trajectory_generator_joint_pos_des,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
+        height_scan = None
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -268,6 +282,25 @@ class UnitreeGo2FlatEnvCfg_PMTG_v3(UnitreeGo2FlatEnvCfg_PMTG_v2):
             func=mdp.imu_lin_acc, noise=Unoise(n_min=-0.1, n_max=0.1)
         )
         self.observations.policy.base_lin_vel = None
+        self.observations.policy.pmtg_joint_pos_des.history_length = 0
+        self.observations.policy.joint_pos.history_length = 0
+        self.observations.policy.joint_vel.history_length = 0
+
         self.observations.critic = self.CriticObservationCfg()
 
         self.rewards.alive = None
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v3_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v3):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # make a smaller scene for play
+        self.scene.num_envs = 50
+        self.scene.env_spacing = 2.5
+        # disable randomization for play
+        self.observations.policy.enable_corruption = False
+        # remove random pushing event
+        self.events.base_external_force_torque = None
+        self.events.push_robot = None
