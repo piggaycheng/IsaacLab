@@ -6,9 +6,11 @@
 from isaaclab.utils import configclass
 
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from .rough_env_cfg import UnitreeGo2RoughEnvCfg
 
@@ -215,9 +217,19 @@ class UnitreeGo2FlatEnvCfg_PMTG_v2(UnitreeGo2FlatEnvCfg_PMTG_v1):
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
                 "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
-            }
+            },
         )
         self.rewards.standing_still = None
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v2_1(UnitreeGo2FlatEnvCfg_PMTG_v2):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.observations.policy.pmtg_joint_pos_des.history_length = 0
+        self.observations.policy.joint_pos.history_length = 0
+        self.observations.policy.joint_vel.history_length = 0
 
 
 @configclass
@@ -233,3 +245,21 @@ class UnitreeGo2FlatEnvCfg_PMTG_v2_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v2):
         # remove random pushing event
         self.events.base_external_force_torque = None
         self.events.push_robot = None
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v3(UnitreeGo2FlatEnvCfg_PMTG_v2):
+    @configclass
+    class CriticObservationCfg(ObsGroup):
+        base_lin_vel = ObsTerm(
+            func=mdp.base_lin_vel, noise=Unoise(n_min=-0.1, n_max=0.1)
+        )
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # FIXME: add imu linear acceleration observation
+        self.observations.policy.base_lin_vel = None
+        self.observations.critic = self.CriticObservationCfg()
+
+        self.rewards.track_lin_vel_xy_exp.weight = 15.0
