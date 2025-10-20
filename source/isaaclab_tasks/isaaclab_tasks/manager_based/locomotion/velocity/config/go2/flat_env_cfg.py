@@ -11,6 +11,7 @@ from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
+from isaaclab.sensors import ImuCfg
 
 from .rough_env_cfg import UnitreeGo2RoughEnvCfg
 
@@ -258,8 +259,15 @@ class UnitreeGo2FlatEnvCfg_PMTG_v3(UnitreeGo2FlatEnvCfg_PMTG_v2):
     def __post_init__(self) -> None:
         super().__post_init__()
 
-        # FIXME: add imu linear acceleration observation
+        self.scene.imu = ImuCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/base",
+            update_period=0.0,
+        )
+
+        self.observations.policy.imu_lin_acc = ObsTerm(
+            func=mdp.imu_lin_acc, noise=Unoise(n_min=-0.1, n_max=0.1)
+        )
         self.observations.policy.base_lin_vel = None
         self.observations.critic = self.CriticObservationCfg()
 
-        self.rewards.track_lin_vel_xy_exp.weight = 15.0
+        self.rewards.alive = None
