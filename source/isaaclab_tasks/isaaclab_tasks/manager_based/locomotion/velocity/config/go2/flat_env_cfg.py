@@ -53,6 +53,41 @@ class UnitreeGo2FlatEnvCfg_PLAY(UnitreeGo2FlatEnvCfg):
 
 
 @configclass
+class PMTGObservationsCfg(ObservationsCfg):
+    """Observation specifications for the MDP."""
+
+    @configclass
+    class PolicyCfg(ObservationsCfg.PolicyCfg):
+        """Observations for policy group."""
+        imu_lin_acc = ObsTerm(
+            func=mdp.imu_lin_acc, noise=Unoise(n_min=-0.1, n_max=0.1)
+        )
+        pmtg_phase = ObsTerm(
+            func=mdp.trajectory_generator_phase,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
+        pmtg_joint_pos_des = ObsTerm(
+            func=mdp.trajectory_generator_joint_pos_des,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
+        base_lin_vel = None
+        height_scan = None
+
+    @configclass
+    class CriticCfg(PolicyCfg):
+        """Observations for critic group."""
+        base_lin_vel = ObsTerm(func=mdp.base_lin_vel, noise=Unoise(n_min=-0.1, n_max=0.1))
+
+    # observation groups
+    policy: PolicyCfg = PolicyCfg()
+    critic: CriticCfg = CriticCfg()
+
+
+@configclass
 class UnitreeGo2FlatEnvCfg_PMTG(UnitreeGo2FlatEnvCfg):
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -251,24 +286,6 @@ class UnitreeGo2FlatEnvCfg_PMTG_v2_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v2):
 
 @configclass
 class UnitreeGo2FlatEnvCfg_PMTG_v3(UnitreeGo2FlatEnvCfg_PMTG_v2):
-    @configclass
-    class CriticObservationCfg(ObservationsCfg.PolicyCfg):
-        imu_lin_acc = ObsTerm(
-            func=mdp.imu_lin_acc, noise=Unoise(n_min=-0.1, n_max=0.1)
-        )
-        pmtg_phase = ObsTerm(
-            func=mdp.trajectory_generator_phase,
-            params={
-                "action_name": "joint_pos",
-            },
-        )
-        pmtg_joint_pos_des = ObsTerm(
-            func=mdp.trajectory_generator_joint_pos_des,
-            params={
-                "action_name": "joint_pos",
-            },
-        )
-        height_scan = None
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -278,15 +295,7 @@ class UnitreeGo2FlatEnvCfg_PMTG_v3(UnitreeGo2FlatEnvCfg_PMTG_v2):
             update_period=0.0,
         )
 
-        self.observations.policy.imu_lin_acc = ObsTerm(
-            func=mdp.imu_lin_acc, noise=Unoise(n_min=-0.1, n_max=0.1)
-        )
-        self.observations.policy.base_lin_vel = None
-        self.observations.policy.pmtg_joint_pos_des.history_length = 0
-        self.observations.policy.joint_pos.history_length = 0
-        self.observations.policy.joint_vel.history_length = 0
-
-        self.observations.critic = self.CriticObservationCfg()
+        self.observations = PMTGObservationsCfg()
 
         self.rewards.alive = None
 
