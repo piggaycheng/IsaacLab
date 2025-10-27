@@ -220,13 +220,16 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
             joint_pos_des_full_step = self._ik_controller.compute(
                 ee_pos_curr, ee_quat_curr, jacobian, joint_pos
             )
+            # Add residuals to the full step IK solution
+            if self._residuals is not None:
+                joint_pos_des_full_step += self._residuals
+            # Compute the delta and apply gain
             delta_joint_pos = joint_pos_des_full_step - joint_pos
             joint_pos_des = joint_pos + self._gain * delta_joint_pos
         else:
             joint_pos_des = joint_pos.clone()
-
-        if self._residuals is not None:
-            joint_pos_des += self._residuals
+            if self._residuals is not None:
+                joint_pos_des += self._residuals
 
         self._joint_pos_des = joint_pos_des
 
