@@ -59,9 +59,6 @@ class PMTGObservationsCfg(ObservationsCfg):
     @configclass
     class PolicyCfg(ObservationsCfg.PolicyCfg):
         """Observations for policy group."""
-        imu_lin_acc = ObsTerm(
-            func=mdp.imu_lin_acc, noise=Unoise(n_min=-0.1, n_max=0.1)
-        )
         pmtg_phase = ObsTerm(
             func=mdp.trajectory_generator_phase,
             params={
@@ -73,6 +70,9 @@ class PMTGObservationsCfg(ObservationsCfg):
             params={
                 "action_name": "joint_pos",
             },
+        )
+        imu_lin_acc = ObsTerm(
+            func=mdp.imu_lin_acc, noise=Unoise(n_min=-0.1, n_max=0.1)
         )
         base_lin_vel = None
         height_scan = None
