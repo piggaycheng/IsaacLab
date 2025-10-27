@@ -178,7 +178,7 @@ class FourLegsPMTGAction(ActionTerm):
             # Reset the IK action terms for the specified environments
             self.ik_action_terms[i].reset(env_ids)
 
-    def tanh_process(self, data, limit):
+    def tanh_process(self, data: torch.Tensor, limit: tuple[float, float]):
         # 使用 tanh 將 data 從 (-inf, inf) 映射到 (-1, 1)
         tanh_data = torch.tanh(data)
         # 將 (-1, 1) 的範圍縮放到目標範圍 [min, max]
