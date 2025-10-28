@@ -16,6 +16,7 @@ from isaacsim.core.utils.rotations import quat_to_rot_matrix
 from isaacsim.core.utils.types import ArticulationAction
 from isaacsim.robot.policy.examples.controllers import PolicyController
 from isaacsim.storage.native import get_assets_root_path
+from isaacsim.sensors.physics import IMUSensor
 
 
 class Go2FlatTerrainPolicy(PolicyController):
@@ -53,10 +54,17 @@ class Go2FlatTerrainPolicy(PolicyController):
             training_folder + "/exported/policy.pt",
             training_folder + "/params/env.yaml",
         )
-        self._previous_policy_output = np.zeros(16)
         self._policy_counter = 0
 
-        self._obs = np.zeros(60)
+        self._obs = np.zeros(72)
+
+        self._imu_sensor = IMUSensor(
+            prim_path="/World/" + name + "/imu/imu_sensor",
+            name="imu_sensor",
+            frequency=60,
+            translation=np.array([0, 0, 0]),
+            orientation=np.array([1, 0, 0, 0]),
+        )
 
     def _compute_observation(self, command):
         """
@@ -79,22 +87,20 @@ class Go2FlatTerrainPolicy(PolicyController):
         ang_vel_b = np.matmul(R_BI, ang_vel_I)
         gravity_b = np.matmul(R_BI, np.array([0.0, 0.0, -1.0]))
 
-        obs = np.zeros(60)
+        obs = np.zeros(72)
         # Base lin vel
-        obs[:3] = lin_vel_b
+        # obs[:3] = lin_vel_b
         # Base ang vel
-        obs[3:6] = ang_vel_b
+        obs[:3] = ang_vel_b
         # Gravity
-        obs[6:9] = gravity_b
+        obs[3:6] = gravity_b
         # Command
-        obs[9:12] = command
+        obs[6:9] = command
         # Joint states
         current_joint_pos = self.robot.get_joint_positions()
         current_joint_vel = self.robot.get_joint_velocities()
-        obs[12:24] = current_joint_pos - self.default_pos
-        obs[24:36] = current_joint_vel
-        # Previous Action
-        obs[36:52] = self._previous_policy_output
+        obs[9:21] = current_joint_pos - self.default_pos
+        obs[21:33] = current_joint_vel
 
         self._obs = obs.copy()
 
@@ -148,3 +154,37 @@ class Go2FlatTerrainPolicy(PolicyController):
     def current_absolute_joint_positions(self) -> np.ndarray:
         """Returns the absolute joint positions."""
         return self.robot.get_joint_positions()
+
+    @property
+    def ang_vel_b(self) -> np.ndarray:
+        """Returns the base angular velocity in body frame."""
+        lin_vel_I = self.robot.get_linear_velocity()
+        ang_vel_I = self.robot.get_angular_velocity()
+        pos_IB, q_IB = self.robot.get_world_pose()
+
+        R_IB = quat_to_rot_matrix(q_IB)
+        R_BI = R_IB.transpose()
+        ang_vel_b = np.matmul(R_BI, ang_vel_I)
+
+        return ang_vel_b
+
+    @property
+    def gravity_b(self) -> np.ndarray:
+        """Returns the gravity vector in body frame."""
+        pos_IB, q_IB = self.robot.get_world_pose()
+
+        R_IB = quat_to_rot_matrix(q_IB)
+        R_BI = R_IB.transpose()
+        gravity_b = np.matmul(R_BI, np.array([0.0, 0.0, -1.0]))
+
+        return gravity_b
+
+    @property
+    def imu_values(self) -> dict:
+        """Returns the IMU sensor readings."""
+        value = self._imu_sensor.get_current_frame()
+        return {
+            "linear_acceleration": value["lin_acc"],
+            "angular_velocity": value["ang_vel"],
+            "orientation": value["orientation"],
+        }

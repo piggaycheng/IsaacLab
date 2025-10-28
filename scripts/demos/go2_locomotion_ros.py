@@ -26,32 +26,48 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
 from std_msgs.msg import Float64MultiArray
+from sensor_msgs.msg import Imu
+from geometry_msgs.msg import Twist
 
 
 class Go2LocomotionNode(Node):
     def __init__(self):
         super().__init__('go2_locomotion_ros')
 
+        sensor_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+
+        reliable_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=5
+        )
+
         self.obs_publisher = self.create_publisher(
             Float64MultiArray,
             '/observation',
-            QoSProfile(
-                history=QoSHistoryPolicy.KEEP_LAST,
-                depth=1,
-                reliability=QoSReliabilityPolicy.BEST_EFFORT,
-                durability=QoSDurabilityPolicy.VOLATILE,
-            )
+            sensor_qos
         )
 
         self.joint_state_publisher = self.create_publisher(
             JointState,
             '/joint_states',
-            QoSProfile(
-                history=QoSHistoryPolicy.KEEP_LAST,
-                depth=1,
-                reliability=QoSReliabilityPolicy.BEST_EFFORT,
-                durability=QoSDurabilityPolicy.VOLATILE,
-            )
+            sensor_qos
+        )
+
+        self.imu_publisher = self.create_publisher(
+            Imu,
+            '/imu',
+            sensor_qos
+        )
+
+        self.command_publisher = self.create_publisher(
+            Twist,
+            '/command',
+            reliable_qos
         )
 
         self.action_subscriber = self.create_subscription(
@@ -80,6 +96,28 @@ class Go2LocomotionNode(Node):
         msg.position = joint_positions.tolist()
         msg.velocity = joint_velocities.tolist()
         self.joint_state_publisher.publish(msg)
+
+    def publish_imu(self, imu_values: dict):
+        msg = Imu()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.linear_acceleration.x = float(imu_values["linear_acceleration"][0])
+        msg.linear_acceleration.y = float(imu_values["linear_acceleration"][1])
+        msg.linear_acceleration.z = float(imu_values["linear_acceleration"][2])
+        msg.angular_velocity.x = float(imu_values["angular_velocity"][0])
+        msg.angular_velocity.y = float(imu_values["angular_velocity"][1])
+        msg.angular_velocity.z = float(imu_values["angular_velocity"][2])
+        msg.orientation.w = float(imu_values["orientation"][0])
+        msg.orientation.x = float(imu_values["orientation"][1])
+        msg.orientation.y = float(imu_values["orientation"][2])
+        msg.orientation.z = float(imu_values["orientation"][3])
+        self.imu_publisher.publish(msg)
+
+    def publish_command(self, command: np.ndarray):
+        msg = Twist()
+        msg.linear.x = command[0]
+        msg.linear.y = command[1]
+        msg.angular.z = command[2]
+        self.command_publisher.publish(msg)
 
     def action_callback(self, msg):
         self._action = np.array(msg.data)
@@ -178,12 +216,14 @@ class Go2_runner(object):
         else:
             rclpy.spin_once(self.node, timeout_sec=0)  # Non-blocking spin to process incoming messages
             self._go2.forward(step_size, self._base_command, action=self.node.action)
-            self.node.publish_observation(self._go2.observation)
+            # self.node.publish_observation(self._go2.observation)
             self.node.publish_joint_states(
                 self._go2.joint_names,
                 self._go2.current_absolute_joint_positions,
                 self._go2.current_joint_velocities,
             )
+            self.node.publish_imu(self._go2.imu_values)
+            self.node.publish_command(self._base_command)
 
     def run(self) -> None:
         """
