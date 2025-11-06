@@ -362,6 +362,9 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
 
         leg_hip_positions: tuple[list[float], list[float], list[float], list[float]] = MISSING  # LF, RF, RL, RR
         """四條腿的髖關節相對於機身的位置, 用於計算轉向效果"""
+        
+        dead_zone: float = 0.0
+        """Dead zone for the trajectory generator inputs. Defaults to 0.0."""
 
     class_type: type[ActionTerm] = pmtg_actions.FourLegsPMTGAction
 

@@ -89,13 +89,6 @@ class FourLegsPMTGAction(ActionTerm):
         # 將原始動作使用tanh處理縮放平移
         self._raw_actions[:] = actions
 
-        # 獲取指令
-        command_name = self.cfg.command_name
-        command_threshold = self.cfg.command_threshold
-        commands = self._env.command_manager.get_command(command_name)
-        command_norm = torch.norm(commands[:, :3], dim=1)
-        is_standing_command = (command_norm < command_threshold).unsqueeze(1)  # Shape: (num_envs, 1)
-
         # Process trajectory generator arguments
         tg_actions_raw = actions[:, :4]
         # When standing, force trajectory generator actions to zero
@@ -117,12 +110,17 @@ class FourLegsPMTGAction(ActionTerm):
             ],
             dim=1,
         )
+
+        amplitude_dead_zone = self.cfg.trajectory_generator_params.dead_zone
+        if amplitude_dead_zone > 0.0:
+            amplitudes = processed_tg_args[:, 1:4]
+            processed_tg_args[:, 1:4] = torch.where(torch.abs(amplitudes) < amplitude_dead_zone, torch.tensor(0.0, device=amplitudes.device), amplitudes)
+
         # Process residuals (always active)
         residuals_raw = actions[:, 4:]
         processed_residuals = self.tanh_process(
             residuals_raw, self.cfg.residuals_limit
         )
-        processed_tg_args = processed_tg_args * (~is_standing_command)
         self._processed_actions = torch.cat(
             [processed_tg_args, processed_residuals], dim=1
         )
@@ -178,7 +176,7 @@ class FourLegsPMTGAction(ActionTerm):
             # Reset the IK action terms for the specified environments
             self.ik_action_terms[i].reset(env_ids)
 
-    def tanh_process(self, data: torch.Tensor, limit: tuple[float, float]):
+    def tanh_process(self, data: torch.Tensor, limit: tuple[float, float]) -> torch.Tensor:
         # 使用 tanh 將 data 從 (-inf, inf) 映射到 (-1, 1)
         tanh_data = torch.tanh(data)
         # 將 (-1, 1) 的範圍縮放到目標範圍 [min, max]

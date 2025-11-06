@@ -313,3 +313,36 @@ class UnitreeGo2FlatEnvCfg_PMTG_v3_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v3):
         # remove random pushing event
         self.events.base_external_force_torque = None
         self.events.push_robot = None
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v4(UnitreeGo2FlatEnvCfg_PMTG_v3):
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.scene.robot.actuators['base_legs'].stiffness = 100.0
+        self.scene.robot.actuators['base_legs'].damping = 1.0
+
+        self.actions.joint_pos.trajectory_generator_params.dead_zone = 0.1
+
+        self.rewards.alive = RewTerm(
+            func=mdp.is_alive,
+            weight=2.0,
+        )
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v4_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v4):
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # make a smaller scene for play
+        self.scene.num_envs = 50
+        self.scene.env_spacing = 2.5
+        # disable randomization for play
+        self.observations.policy.enable_corruption = False
+        # remove random pushing event
+        self.events.base_external_force_torque = None
+        self.events.push_robot = None
