@@ -196,3 +196,24 @@ def conditional_joint_residuals_l2(
     penalty_scale = torch.where(is_turning, turn_penalty_scale, linear_penalty_scale)
 
     return residual_penalty * penalty_scale
+
+
+def stand_still_amp_deviation_exp(
+    env: ManagerBasedRLEnv,
+    action_name: str = "joint_pos",
+    command_name: str = "base_velocity",
+    command_threshold: float = 0.06,
+    std: float = 0.1,
+) -> torch.Tensor:
+    """Reward small deviations from zero amplitudes when the command is very small."""
+    commands = env.command_manager.get_command(command_name)
+    is_zero_command = torch.norm(commands[:, :2], dim=1) < command_threshold
+
+    action_term = env.action_manager.get_term(action_name)
+    pmtg_action_term = cast(FourLegsPMTGAction, action_term)
+    amplitudes = pmtg_action_term.processed_actions[:, 1:4]
+
+    amp_deviation = torch.sum(torch.square(amplitudes), dim=1)
+    reward = torch.exp(-amp_deviation / std**2)
+
+    return reward * is_zero_command

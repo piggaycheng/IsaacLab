@@ -5,7 +5,10 @@
 
 from dataclasses import MISSING
 
-from isaaclab.controllers import DifferentialIKControllerCfg, OperationalSpaceControllerCfg
+from isaaclab.controllers import (
+    DifferentialIKControllerCfg,
+    OperationalSpaceControllerCfg,
+)
 from isaaclab.managers.action_manager import ActionTerm, ActionTermCfg
 from isaaclab.utils import configclass
 
@@ -139,7 +142,9 @@ class EMAJointPositionToLimitsActionCfg(JointPositionToLimitsActionCfg):
     See :class:`EMAJointPositionToLimitsAction` for more details.
     """
 
-    class_type: type[ActionTerm] = joint_actions_to_limits.EMAJointPositionToLimitsAction
+    class_type: type[ActionTerm] = (
+        joint_actions_to_limits.EMAJointPositionToLimitsAction
+    )
 
     alpha: float | dict[str, float] = 1.0
     """The weight for the moving average (float or dict of regex expressions). Defaults to 1.0.
@@ -243,7 +248,9 @@ class DifferentialInverseKinematicsActionCfg(ActionTermCfg):
         rot: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
         """Quaternion rotation ``(w, x, y, z)`` w.r.t. the parent frame. Defaults to (1.0, 0.0, 0.0, 0.0)."""
 
-    class_type: type[ActionTerm] = task_space_actions.DifferentialInverseKinematicsAction
+    class_type: type[ActionTerm] = (
+        task_space_actions.DifferentialInverseKinematicsAction
+    )
 
     joint_names: list[str] = MISSING
     """List of joint names or regex expressions that the action will be mapped to."""
@@ -348,21 +355,43 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
         step_length_y_limit: tuple[float, float] = (-0.2, 0.2)
         """Y step length limits (m). Defaults to (-0.2, 0.2)."""
 
-        foot_default_heights: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
+        foot_default_heights: tuple[float, float, float, float] = (
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )  # FL, FR, RL, RR
         """預設的腳部高度, 用於計算Z軸位置"""
 
-        leg_y_offsets: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
+        leg_y_offsets: tuple[float, float, float, float] = (
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )  # FL, FR, RL, RR
         """四條腿的Y軸預設偏移量, 用於計算Y軸位置"""
 
-        leg_x_offsets: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # FL, FR, RL, RR
+        leg_x_offsets: tuple[float, float, float, float] = (
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )  # FL, FR, RL, RR
         """四條腿的X軸預設偏移量, 用於計算X軸位置"""
 
-        phase_offsets: tuple[float, float, float, float] = (0.0, 0.5, 0.5, 0.0)  # LF, RF, RL, RR
+        phase_offsets: tuple[float, float, float, float] = (
+            0.0,
+            0.5,
+            0.5,
+            0.0,
+        )  # LF, RF, RL, RR
         """四條腿的相位偏移量, 以實現對角步態"""
 
-        leg_hip_positions: tuple[list[float], list[float], list[float], list[float]] = MISSING  # LF, RF, RL, RR
+        leg_hip_positions: tuple[list[float], list[float], list[float], list[float]] = (
+            MISSING  # LF, RF, RL, RR
+        )
         """四條腿的髖關節相對於機身的位置, 用於計算轉向效果"""
-        
+
         dead_zone: float = 0.0
         """Dead zone for the trajectory generator inputs. Defaults to 0.0."""
 
@@ -386,3 +415,6 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     """The name of the command to use for the trajectory generator. Defaults to "base_velocity"."""
     command_threshold: float = 0.1
     """Threshold to consider command as zero command. Defaults to 0.1."""
+
+    lpf_alpha: float = 1.0
+    """The weight for the low-pass filter (LPF). Defaults to 1.0."""

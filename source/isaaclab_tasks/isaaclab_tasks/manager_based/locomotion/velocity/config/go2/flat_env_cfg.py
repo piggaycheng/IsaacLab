@@ -6,13 +6,16 @@
 from isaaclab.utils import configclass
 
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
+import isaaclab_tasks.manager_based.locomotion.velocity.config.spot.mdp as spot_mdp
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 from isaaclab.sensors import ImuCfg
-from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import ObservationsCfg
+from isaaclab_tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
+    ObservationsCfg,
+)
 
 from .rough_env_cfg import UnitreeGo2RoughEnvCfg
 
@@ -59,6 +62,7 @@ class PMTGObservationsCfg(ObservationsCfg):
     @configclass
     class PolicyCfg(ObservationsCfg.PolicyCfg):
         """Observations for policy group."""
+
         pmtg_phase = ObsTerm(
             func=mdp.trajectory_generator_phase,
             params={
@@ -71,16 +75,17 @@ class PMTGObservationsCfg(ObservationsCfg):
                 "action_name": "joint_pos",
             },
         )
-        imu_lin_acc = ObsTerm(
-            func=mdp.imu_lin_acc, noise=Unoise(n_min=-0.1, n_max=0.1)
-        )
+        imu_lin_acc = ObsTerm(func=mdp.imu_lin_acc, noise=Unoise(n_min=-0.1, n_max=0.1))
         base_lin_vel = None
         height_scan = None
 
     @configclass
     class CriticCfg(PolicyCfg):
         """Observations for critic group."""
-        base_lin_vel = ObsTerm(func=mdp.base_lin_vel, noise=Unoise(n_min=-0.1, n_max=0.1))
+
+        base_lin_vel = ObsTerm(
+            func=mdp.base_lin_vel, noise=Unoise(n_min=-0.1, n_max=0.1)
+        )
 
     # observation groups
     policy: PolicyCfg = PolicyCfg()
@@ -321,14 +326,32 @@ class UnitreeGo2FlatEnvCfg_PMTG_v4(UnitreeGo2FlatEnvCfg_PMTG_v3):
     def __post_init__(self) -> None:
         super().__post_init__()
 
-        self.scene.robot.actuators['base_legs'].stiffness = 100.0
-        self.scene.robot.actuators['base_legs'].damping = 1.0
+        self.commands.base_velocity.rel_standing_envs = 0.2
 
-        self.actions.joint_pos.trajectory_generator_params.dead_zone = 0.1
+        self.scene.robot.actuators["base_legs"].stiffness = 100.0
+        self.scene.robot.actuators["base_legs"].damping = 1.0
 
-        self.rewards.alive = RewTerm(
-            func=mdp.is_alive,
-            weight=2.0,
+        self.actions.joint_pos.trajectory_generator_params.dead_zone = 0.03
+        self.actions.joint_pos.lpf_alpha = 0.2
+        self.actions.joint_pos.residuals_limit = (-0.1, 0.1)
+
+        self.rewards.stand_still_amp_deviation = RewTerm(
+            func=mdp.stand_still_amp_deviation_exp,
+            weight=5.0,
+            params={
+                "command_name": "base_velocity",
+                "action_name": "joint_pos",
+            },
+        )
+        self.rewards.foot_clearance = RewTerm(
+            func=spot_mdp.foot_clearance_reward,
+            weight=0.5,
+            params={
+                "std": 0.05,
+                "tanh_mult": 2.0,
+                "target_height": 0.15,
+                "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+            },
         )
 
 

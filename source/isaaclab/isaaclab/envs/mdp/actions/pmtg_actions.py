@@ -86,6 +86,8 @@ class FourLegsPMTGAction(ActionTerm):
     def process_actions(self, actions: torch.Tensor):
         """16-D action space: first 4 are for trajectory generator, last 12 are joint position residuals."""
 
+        last_tg_args = self._processed_actions[:, :4].clone()
+
         # 將原始動作使用tanh處理縮放平移
         self._raw_actions[:] = actions
 
@@ -110,17 +112,24 @@ class FourLegsPMTGAction(ActionTerm):
             ],
             dim=1,
         )
+        # Apply low-pass filter (LPF) to smooth the trajectory generator arguments
+        lpf_alpha = self.cfg.lpf_alpha
+        processed_tg_args = (
+            lpf_alpha * processed_tg_args + (1 - lpf_alpha) * last_tg_args
+        )
 
         amplitude_dead_zone = self.cfg.trajectory_generator_params.dead_zone
         if amplitude_dead_zone > 0.0:
             amplitudes = processed_tg_args[:, 1:4]
-            processed_tg_args[:, 1:4] = torch.where(torch.abs(amplitudes) < amplitude_dead_zone, torch.tensor(0.0, device=amplitudes.device), amplitudes)
+            processed_tg_args[:, 1:4] = torch.where(
+                torch.abs(amplitudes) < amplitude_dead_zone,
+                torch.tensor(0.0, device=amplitudes.device),
+                amplitudes,
+            )
 
         # Process residuals (always active)
         residuals_raw = actions[:, 4:]
-        processed_residuals = self.tanh_process(
-            residuals_raw, self.cfg.residuals_limit
-        )
+        processed_residuals = self.tanh_process(residuals_raw, self.cfg.residuals_limit)
         self._processed_actions = torch.cat(
             [processed_tg_args, processed_residuals], dim=1
         )
@@ -176,7 +185,9 @@ class FourLegsPMTGAction(ActionTerm):
             # Reset the IK action terms for the specified environments
             self.ik_action_terms[i].reset(env_ids)
 
-    def tanh_process(self, data: torch.Tensor, limit: tuple[float, float]) -> torch.Tensor:
+    def tanh_process(
+        self, data: torch.Tensor, limit: tuple[float, float]
+    ) -> torch.Tensor:
         # 使用 tanh 將 data 從 (-inf, inf) 映射到 (-1, 1)
         tanh_data = torch.tanh(data)
         # 將 (-1, 1) 的範圍縮放到目標範圍 [min, max]
