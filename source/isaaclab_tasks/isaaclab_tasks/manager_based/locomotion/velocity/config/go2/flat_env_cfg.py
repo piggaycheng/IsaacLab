@@ -349,8 +349,17 @@ class UnitreeGo2FlatEnvCfg_PMTG_v4(UnitreeGo2FlatEnvCfg_PMTG_v3):
             params={
                 "std": 0.05,
                 "tanh_mult": 2.0,
-                "target_height": 0.15,
+                "target_height": 0.2,
                 "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+            },
+        )
+        self.rewards.action_rate_l2 = None
+        self.rewards.standing_still_residuals = RewTerm(
+            func=mdp.stand_still_residuals_exp,
+            weight=1.0,
+            params={
+                "action_name": "joint_pos",
+                "std": 0.1,
             },
         )
 

@@ -38,6 +38,9 @@ class FourLegsPMTGAction(ActionTerm):
         self._phases = torch.zeros(
             self.num_envs, 4, device=self.device
         )  # phase for each leg
+        self._filtered_amplitudes = torch.zeros(
+            self.num_envs, 3, device=self.device
+        )  # filtered amplitudes Ax, Ay, Az
 
         self.ik_action_cfgs = cfg.ik_action_cfgs
         self.ik_action_terms = [
@@ -83,6 +86,11 @@ class FourLegsPMTGAction(ActionTerm):
         joint_pos_list = [term.joint_pos_des for term in self.ik_action_terms]
         return torch.cat(joint_pos_list, dim=1)  # Concatenate along the joint dimension
 
+    @property
+    def filtered_amplitudes(self) -> torch.Tensor:
+        """Get the filtered amplitudes (Ax, Ay, Az) from the last processed actions."""
+        return self._filtered_amplitudes
+
     def process_actions(self, actions: torch.Tensor):
         """16-D action space: first 4 are for trajectory generator, last 12 are joint position residuals."""
 
@@ -126,6 +134,7 @@ class FourLegsPMTGAction(ActionTerm):
                 torch.tensor(0.0, device=amplitudes.device),
                 amplitudes,
             )
+            self._filtered_amplitudes = processed_tg_args[:, 1:4]
 
         # Process residuals (always active)
         residuals_raw = actions[:, 4:]
@@ -171,6 +180,7 @@ class FourLegsPMTGAction(ActionTerm):
         self._raw_actions[env_ids] = 0.0
         self._processed_actions[env_ids] = 0.0
         self._phases[env_ids] = 0.0
+        self._filtered_amplitudes[env_ids] = 0.0
         # Reset the phase for each trajectory generator
         for i in range(4):
             # On the first reset, the phase tensor is a scalar.
