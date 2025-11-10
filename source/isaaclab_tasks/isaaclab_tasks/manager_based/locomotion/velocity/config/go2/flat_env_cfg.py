@@ -334,6 +334,7 @@ class UnitreeGo2FlatEnvCfg_PMTG_v4(UnitreeGo2FlatEnvCfg_PMTG_v3):
         self.actions.joint_pos.trajectory_generator_params.dead_zone = 0.03
         self.actions.joint_pos.lpf_alpha = 0.2
         self.actions.joint_pos.residuals_limit = (-0.1, 0.1)
+        self.actions.joint_pos.residuals_dead_zone = 0.01
 
         self.rewards.stand_still_amp_deviation = RewTerm(
             func=mdp.stand_still_amp_deviation_exp,
@@ -359,7 +360,7 @@ class UnitreeGo2FlatEnvCfg_PMTG_v4(UnitreeGo2FlatEnvCfg_PMTG_v3):
             weight=1.0,
             params={
                 "action_name": "joint_pos",
-                "std": 0.1,
+                "std": 0.5,
             },
         )
 

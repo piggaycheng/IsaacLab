@@ -394,6 +394,8 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
 
         dead_zone: float = 0.0
         """Dead zone for the trajectory generator inputs. Defaults to 0.0."""
+        residual_dead_zone: float = 0.0
+        """Dead zone for the joint position residuals. Defaults to 0.0."""
 
     class_type: type[ActionTerm] = pmtg_actions.FourLegsPMTGAction
 
