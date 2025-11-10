@@ -270,19 +270,10 @@ def stand_still_residuals_exp(
     pmtg_action_term = cast(FourLegsPMTGAction, action_term)
     filtered_amplitudes = pmtg_action_term.filtered_amplitudes
 
-    is_standing_still = (
-        (
-            filtered_amplitudes[:, 0]
-            < pmtg_action_term.cfg.trajectory_generator_params.dead_zone
-        )
-        & (
-            filtered_amplitudes[:, 1]
-            < pmtg_action_term.cfg.trajectory_generator_params.dead_zone
-        )
-        & (
-            filtered_amplitudes[:, 2]
-            < pmtg_action_term.cfg.trajectory_generator_params.dead_zone
-        )
+    is_standing_still = torch.all(
+        torch.abs(filtered_amplitudes)
+        < pmtg_action_term.cfg.trajectory_generator_params.dead_zone,
+        dim=1,
     )
     residuals = pmtg_action_term.processed_actions[:, 4:]
 
