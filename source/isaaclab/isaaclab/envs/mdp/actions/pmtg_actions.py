@@ -96,7 +96,6 @@ class FourLegsPMTGAction(ActionTerm):
 
         last_tg_args = self._processed_actions[:, :4].clone()
 
-        # 將原始動作使用tanh處理縮放平移
         self._raw_actions[:] = actions
 
         # Process trajectory generator arguments
@@ -139,6 +138,14 @@ class FourLegsPMTGAction(ActionTerm):
         # Process residuals (always active)
         residuals_raw = actions[:, 4:]
         processed_residuals = self.tanh_process(residuals_raw, self.cfg.residuals_limit)
+        residuals_dead_zone = self.cfg.residuals_dead_zone
+        if residuals_dead_zone > 0.0:
+            processed_residuals = torch.where(
+                torch.abs(processed_residuals) < residuals_dead_zone,
+                torch.tensor(0.0, device=processed_residuals.device),
+                processed_residuals,
+            )
+
         self._processed_actions = torch.cat(
             [processed_tg_args, processed_residuals], dim=1
         )
