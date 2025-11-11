@@ -334,7 +334,7 @@ class UnitreeGo2FlatEnvCfg_PMTG_v4(UnitreeGo2FlatEnvCfg_PMTG_v3):
         self.actions.joint_pos.trajectory_generator_params.dead_zone = 0.03
         self.actions.joint_pos.lpf_alpha = 0.2
         self.actions.joint_pos.residuals_limit = (-0.1, 0.1)
-        self.actions.joint_pos.residuals_dead_zone = 0.01
+        self.actions.joint_pos.residuals_dead_zone = 0.02
 
         self.rewards.stand_still_amp_deviation = RewTerm(
             func=mdp.stand_still_amp_deviation_exp,
@@ -367,6 +367,32 @@ class UnitreeGo2FlatEnvCfg_PMTG_v4(UnitreeGo2FlatEnvCfg_PMTG_v3):
 
 @configclass
 class UnitreeGo2FlatEnvCfg_PMTG_v4_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v4):
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # make a smaller scene for play
+        self.scene.num_envs = 50
+        self.scene.env_spacing = 2.5
+        # disable randomization for play
+        self.observations.policy.enable_corruption = False
+        # remove random pushing event
+        self.events.base_external_force_torque = None
+        self.events.push_robot = None
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v5(UnitreeGo2FlatEnvCfg_PMTG_v4):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.observations.policy.pmtg_joint_pos_des.history_length = 2
+        self.observations.policy.joint_pos.history_length = 3
+        self.observations.policy.joint_vel.history_length = 2
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v5_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v5):
 
     def __post_init__(self) -> None:
         super().__post_init__()

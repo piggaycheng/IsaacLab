@@ -80,3 +80,21 @@ class UnitreeGo2PMTGRecurrentPPORunnerCfg(UnitreeGo2RoughPPORunnerCfg):
             rnn_hidden_dim=128,
             rnn_num_layers=1,
         )
+
+
+@configclass
+class UnitreeGo2PMTGRecurrentPPORunnerCfg_V2(UnitreeGo2RoughPPORunnerCfg):
+    def __post_init__(self):
+        super().__post_init__()
+
+        self.max_iterations = 3000
+        self.experiment_name = "unitree_go2_pmtg_recurrent_v2"
+        self.policy = RslRlPpoActorCriticRecurrentCfg(
+            init_noise_std=1.0,
+            actor_hidden_dims=[512, 256, 128],
+            critic_hidden_dims=[512, 256, 128],
+            activation="elu",
+            rnn_type="gru",
+            rnn_hidden_dim=128,
+            rnn_num_layers=2,
+        )
