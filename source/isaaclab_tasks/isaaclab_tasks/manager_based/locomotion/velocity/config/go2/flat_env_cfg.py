@@ -390,6 +390,10 @@ class UnitreeGo2FlatEnvCfg_PMTG_v5(UnitreeGo2FlatEnvCfg_PMTG_v4):
         self.observations.policy.joint_pos.history_length = 3
         self.observations.policy.joint_vel.history_length = 2
 
+        self.observations.critic.pmtg_joint_pos_des.history_length = 2
+        self.observations.critic.joint_pos.history_length = 3
+        self.observations.critic.joint_vel.history_length = 2
+
 
 @configclass
 class UnitreeGo2FlatEnvCfg_PMTG_v5_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v5):
