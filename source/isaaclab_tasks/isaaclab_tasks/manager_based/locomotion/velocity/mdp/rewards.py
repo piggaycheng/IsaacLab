@@ -263,21 +263,19 @@ def stand_still_amp_deviation_exp(
 def stand_still_residuals_exp(
     env: ManagerBasedRLEnv,
     action_name: str = "joint_pos",
+    command_name: str = "base_velocity",
+    command_threshold: float = 0.06,
     std: float = 0.1,
 ) -> torch.Tensor:
     """Reward small residuals when the amplitudes are small."""
     action_term = env.action_manager.get_term(action_name)
     pmtg_action_term = cast(FourLegsPMTGAction, action_term)
-    filtered_amplitudes = pmtg_action_term.filtered_amplitudes
+    commands = env.command_manager.get_command(command_name)
+    is_zero_command = torch.norm(commands[:, :2], dim=1) < command_threshold
 
-    is_standing_still = torch.all(
-        torch.abs(filtered_amplitudes)
-        < pmtg_action_term.cfg.trajectory_generator_params.dead_zone,
-        dim=1,
-    )
     residuals = pmtg_action_term.processed_actions[:, 4:]
 
     residual_deviation = torch.sum(torch.square(residuals), dim=1)
     reward = torch.exp(-residual_deviation / std**2)
 
-    return reward * is_standing_still
+    return reward * is_zero_command

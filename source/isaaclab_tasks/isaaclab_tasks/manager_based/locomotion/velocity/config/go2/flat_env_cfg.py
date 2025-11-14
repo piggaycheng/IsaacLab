@@ -359,6 +359,7 @@ class UnitreeGo2FlatEnvCfg_PMTG_v4(UnitreeGo2FlatEnvCfg_PMTG_v3):
             func=mdp.stand_still_residuals_exp,
             weight=1.0,
             params={
+                "command_name": "base_velocity",
                 "action_name": "joint_pos",
                 "std": 0.5,
             },
