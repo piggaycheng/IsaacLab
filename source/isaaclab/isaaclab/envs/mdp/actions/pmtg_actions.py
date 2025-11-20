@@ -41,6 +41,8 @@ class FourLegsPMTGAction(ActionTerm):
         self._filtered_amplitudes = torch.zeros(
             self.num_envs, 3, device=self.device
         )  # filtered amplitudes Ax, Ay, Az
+        self._current_fade = torch.zeros(self.num_envs, 1, device=self.device)
+        self._fade_speed = 0.05
 
         self.ik_action_cfgs = cfg.ik_action_cfgs
         self.ik_action_terms = [
@@ -98,10 +100,11 @@ class FourLegsPMTGAction(ActionTerm):
 
         self._raw_actions[:] = actions
 
-        # Process trajectory generator arguments
+        # [ Policy Output (Raw) ]  <-- 神經網路輸出，可能帶有雜訊或突波
         tg_actions_raw = actions[:, :4]
-        # When standing, force trajectory generator actions to zero
         frequency, amp_x, amp_y, amp_z = tg_actions_raw.unbind(dim=1)
+
+        # [ Tanh & Mapping ]       <-- 限制範圍
         processed_tg_args = torch.stack(
             [
                 self.tanh_process(
@@ -119,21 +122,31 @@ class FourLegsPMTGAction(ActionTerm):
             ],
             dim=1,
         )
-        # Apply low-pass filter (LPF) to smooth the trajectory generator arguments
+
+        # [ LPF (Filter) ] 濾掉高頻雜訊，確保「行走中」的平滑
         lpf_alpha = self.cfg.lpf_alpha
         processed_tg_args = (
             lpf_alpha * processed_tg_args + (1 - lpf_alpha) * last_tg_args
         )
 
-        amplitude_dead_zone = self.cfg.trajectory_generator_params.dead_zone
-        if amplitude_dead_zone > 0.0:
-            amplitudes = processed_tg_args[:, 1:4]
-            processed_tg_args[:, 1:4] = torch.where(
-                torch.abs(amplitudes) < amplitude_dead_zone,
-                torch.tensor(0.0, device=amplitudes.device),
-                amplitudes,
-            )
-            self._filtered_amplitudes = processed_tg_args[:, 1:4]
+        # [ Fade Factor ] 控制整體強度，確保「起步/停止」的平滑
+        # 1. Determine target fade based on command velocity (estimated from amplitudes)
+        # amp_x, amp_y are at indices 1 and 2
+        amplitudes_xy = processed_tg_args[:, 1:3]
+        speed_norm = torch.norm(amplitudes_xy, dim=1, keepdim=True)
+
+        target_fade = torch.where(speed_norm > self.cfg.command_threshold, 1.0, 0.0)
+
+        # 2. Linear Approach to target fade
+        # Move current_fade towards target_fade by fade_speed
+        diff = target_fade - self._current_fade
+        step = torch.clamp(diff, -self._fade_speed, self._fade_speed)
+        self._current_fade += step
+
+        # 3. Apply fade factor
+        amplitudes = processed_tg_args[:, 1:4]
+        processed_tg_args[:, 1:4] = amplitudes * self._current_fade
+        self._filtered_amplitudes = processed_tg_args[:, 1:4]
 
         # Process residuals (always active)
         residuals_raw = actions[:, 4:]
@@ -150,6 +163,7 @@ class FourLegsPMTGAction(ActionTerm):
             [processed_tg_args, processed_residuals], dim=1
         )
 
+        # [ CPG Computation ] 計算正弦波軌跡
         # The first 4 actions are shared trajectory generator parameters
         tg_args = self.processed_actions[:, :4]
         # FIXME: For debug only, fix the step height to a constant value, others are zero
@@ -171,6 +185,7 @@ class FourLegsPMTGAction(ActionTerm):
             # Save the phase for each leg
             self._phases[:, trajectory_generator_idx] = phase
 
+        # [ Motor Command ]
         # Process actions for each leg
         for i, ik_term in enumerate(self.ik_action_terms):
             # Set the residual for the current leg's joints
@@ -188,6 +203,7 @@ class FourLegsPMTGAction(ActionTerm):
         self._processed_actions[env_ids] = 0.0
         self._phases[env_ids] = 0.0
         self._filtered_amplitudes[env_ids] = 0.0
+        self._current_fade[env_ids] = 0.0
         # Reset the phase for each trajectory generator
         for i in range(4):
             # On the first reset, the phase tensor is a scalar.
@@ -223,9 +239,13 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
     ):
         super().__init__(cfg, env)
 
-        self._joint_pos_des = torch.zeros(
-            self.num_envs, len(self._joint_ids), device=self.device
-        )
+        # Resolve the number of joints
+        if isinstance(self._joint_ids, slice):
+            num_joints = len(range(*self._joint_ids.indices(self._asset.num_joints)))
+        else:
+            num_joints = len(self._joint_ids)
+
+        self._joint_pos_des = torch.zeros(self.num_envs, num_joints, device=self.device)
 
     @property
     def ik_controller(self) -> DifferentialIKController:
