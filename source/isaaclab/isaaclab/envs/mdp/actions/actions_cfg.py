@@ -392,9 +392,6 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
         )
         """四條腿的髖關節相對於機身的位置, 用於計算轉向效果"""
 
-        dead_zone: float = 0.0
-        """Dead zone for the trajectory generator inputs. Defaults to 0.0."""
-
     class_type: type[ActionTerm] = pmtg_actions.FourLegsPMTGAction
 
     action_dim: int = 16
@@ -416,8 +413,8 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
     command_threshold: float = 0.1
     """Threshold to consider command as zero command. Defaults to 0.1."""
 
-    lpf_alpha: float = 1.0
-    """The weight for the low-pass filter (LPF). Defaults to 1.0."""
+    cpg_lpf_alpha: float = 0.15
+    """The weight for the low-pass filter (LPF). Defaults to 0.15."""
 
-    residuals_dead_zone: float = 0.0
-    """Dead zone for the joint position residuals. Defaults to 0.0."""
+    residuals_lpf_alpha: float = 0.85
+    """The weight for the low-pass filter (LPF) applied to joint residuals. Defaults to 0.85."""

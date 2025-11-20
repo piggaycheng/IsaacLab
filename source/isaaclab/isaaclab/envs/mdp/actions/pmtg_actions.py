@@ -97,6 +97,7 @@ class FourLegsPMTGAction(ActionTerm):
         """16-D action space: first 4 are for trajectory generator, last 12 are joint position residuals."""
 
         last_tg_args = self._processed_actions[:, :4].clone()
+        last_residuals = self._processed_actions[:, 4:].clone()
 
         self._raw_actions[:] = actions
 
@@ -124,9 +125,9 @@ class FourLegsPMTGAction(ActionTerm):
         )
 
         # [ LPF (Filter) ] 濾掉高頻雜訊，確保「行走中」的平滑
-        lpf_alpha = self.cfg.lpf_alpha
         processed_tg_args = (
-            lpf_alpha * processed_tg_args + (1 - lpf_alpha) * last_tg_args
+            self.cfg.cpg_lpf_alpha * processed_tg_args
+            + (1 - self.cfg.cpg_lpf_alpha) * last_tg_args
         )
 
         # [ Fade Factor ] 控制整體強度，確保「起步/停止」的平滑
@@ -151,13 +152,12 @@ class FourLegsPMTGAction(ActionTerm):
         # Process residuals (always active)
         residuals_raw = actions[:, 4:]
         processed_residuals = self.tanh_process(residuals_raw, self.cfg.residuals_limit)
-        residuals_dead_zone = self.cfg.residuals_dead_zone
-        if residuals_dead_zone > 0.0:
-            processed_residuals = torch.where(
-                torch.abs(processed_residuals) < residuals_dead_zone,
-                torch.tensor(0.0, device=processed_residuals.device),
-                processed_residuals,
-            )
+
+        # Apply LPF to residuals
+        processed_residuals = (
+            self.cfg.residuals_lpf_alpha * processed_residuals
+            + (1 - self.cfg.residuals_lpf_alpha) * last_residuals
+        )
 
         self._processed_actions = torch.cat(
             [processed_tg_args, processed_residuals], dim=1
