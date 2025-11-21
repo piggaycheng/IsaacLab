@@ -91,15 +91,17 @@ class FourLegsPMTGAction(ActionTerm):
     def joint_pos_des(self) -> torch.Tensor:
         """Get the desired joint positions from all IK action terms."""
         joint_pos_list = [term.joint_pos_des for term in self.ik_action_terms]
-        return torch.cat(joint_pos_list, dim=1)  # Concatenate along the joint dimension
+        # Stack along the last dimension to group by joint type (Batch, Joints, Legs)
+        # Then flatten to get [J1_L1, J1_L2, J1_L3, J1_L4, J2_L1, ...]
+        return torch.stack(joint_pos_list, dim=-1).flatten(start_dim=1)
 
     @property
     def joint_pos_ik(self) -> torch.Tensor:
         """Get the IK-computed joint positions from all IK action terms."""
         joint_pos_ik_list = [term.joint_pos_ik for term in self.ik_action_terms]
-        return torch.cat(
-            joint_pos_ik_list, dim=1
-        )  # Concatenate along the joint dimension
+        # Stack along the last dimension to group by joint type (Batch, Joints, Legs)
+        # Then flatten to get [J1_L1, J1_L2, J1_L3, J1_L4, J2_L1, ...]
+        return torch.stack(joint_pos_ik_list, dim=-1).flatten(start_dim=1)
 
     @property
     def filtered_amplitudes(self) -> torch.Tensor:
