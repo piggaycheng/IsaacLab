@@ -54,7 +54,7 @@ def pmtg_tanh_residuals_l2(
 
     curr_tanh_res = action_term.raw_actions[:, 8:]
 
-    return torch.mean(torch.sum(torch.square(curr_tanh_res), dim=1))
+    return torch.mean(torch.square(curr_tanh_res), dim=1)
 
 
 def pmtg_cpg_when_stationary_l2(
