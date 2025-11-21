@@ -59,7 +59,7 @@ def pmtg_tanh_residuals_l2(
     return torch.sum(torch.square(curr_tanh_res), dim=1)
 
 
-def pmtg_cpg_when_stationary(
+def pmtg_cpg_when_stationary_l2(
     env: ManagerBasedRLEnv,
     command_name: str = "base_velocity",
     action_name: str = "joint_pos",

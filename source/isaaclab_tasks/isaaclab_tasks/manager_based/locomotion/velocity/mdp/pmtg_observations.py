@@ -65,7 +65,9 @@ def trajectory_generator_joint_pos_error(
     return ik_pos - curr_pos
 
 
-def last_action(env: ManagerBasedRLEnv, action_name: str = "joint_pos") -> torch.Tensor:
+def last_tanh_action(
+    env: ManagerBasedRLEnv, action_name: str = "joint_pos"
+) -> torch.Tensor:
     """Observation of the last action taken (after tanh processing)."""
     action_term = cast(FourLegsPMTGAction, env.action_manager.get_term(action_name))
     return action_term.last_raw_actions

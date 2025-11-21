@@ -11,3 +11,4 @@ from .curriculums import *  # noqa: F401, F403
 from .rewards import *  # noqa: F401, F403
 from .terminations import *  # noqa: F401, F403
 from .pmtg_observations import *  # noqa: F401, F403
+from .pmtg_rewards import *  # noqa: F401, F403

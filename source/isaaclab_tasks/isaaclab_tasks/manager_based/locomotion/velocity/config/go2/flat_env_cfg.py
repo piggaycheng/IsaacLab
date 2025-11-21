@@ -63,6 +63,12 @@ class PMTGObservationsCfg(ObservationsCfg):
     class PolicyCfg(ObservationsCfg.PolicyCfg):
         """Observations for policy group."""
 
+        actions = ObsTerm(
+            func=mdp.last_tanh_action,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
         pmtg_phase = ObsTerm(
             func=mdp.trajectory_generator_phase,
             params={
@@ -70,7 +76,7 @@ class PMTGObservationsCfg(ObservationsCfg):
             },
         )
         pmtg_joint_pos_des = ObsTerm(
-            func=mdp.trajectory_generator_joint_pos_des,
+            func=mdp.trajectory_generator_joint_pos_error,
             params={
                 "action_name": "joint_pos",
             },
@@ -405,3 +411,104 @@ class UnitreeGo2FlatEnvCfg_PMTG_v5_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v5):
         # remove random pushing event
         self.events.base_external_force_torque = None
         self.events.push_robot = None
+
+
+# pmtg的邏輯大改，和前面的版本不兼容
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v6(UnitreeGo2FlatEnvCfg):
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        self.commands.base_velocity.rel_standing_envs = 0.15
+
+        self.scene.robot.actuators["base_legs"].stiffness = 100.0
+        self.scene.robot.actuators["base_legs"].damping = 1.0
+
+        self.actions.joint_pos = mdp.FourLegsPMTGActionCfg(
+            asset_name="robot",
+            ik_action_cfgs=[
+                mdp.DifferentialInverseKinematicsActionCfg(
+                    asset_name="robot",
+                    joint_names=["FL_.*"],
+                    body_name="FL_foot",
+                    controller=mdp.DifferentialIKControllerCfg(
+                        command_type="position",
+                        ik_method="dls",
+                        use_relative_mode=False,
+                    ),
+                ),
+                mdp.DifferentialInverseKinematicsActionCfg(
+                    asset_name="robot",
+                    joint_names=["FR_.*"],
+                    body_name="FR_foot",
+                    controller=mdp.DifferentialIKControllerCfg(
+                        command_type="position",
+                        ik_method="dls",
+                        use_relative_mode=False,
+                    ),
+                ),
+                mdp.DifferentialInverseKinematicsActionCfg(
+                    asset_name="robot",
+                    joint_names=["RL_.*"],
+                    body_name="RL_foot",
+                    controller=mdp.DifferentialIKControllerCfg(
+                        command_type="position",
+                        ik_method="dls",
+                        use_relative_mode=False,
+                    ),
+                ),
+                mdp.DifferentialInverseKinematicsActionCfg(
+                    asset_name="robot",
+                    joint_names=["RR_.*"],
+                    body_name="RR_foot",
+                    controller=mdp.DifferentialIKControllerCfg(
+                        command_type="position",
+                        ik_method="dls",
+                        use_relative_mode=False,
+                    ),
+                ),
+            ],
+            trajectory_generator_params=mdp.FourLegsPMTGActionCfg.TrajectoryGeneratorCfg(
+                leg_hip_positions=(
+                    [0.1934, 0.0465, 0.0],
+                    [0.1934, -0.0465, 0.0],
+                    [-0.1934, 0.0465, 0.0],
+                    [-0.1934, -0.0465, 0.0],
+                ),  # FL, FR, RL, RR
+                foot_default_heights=(-0.3, -0.3, -0.3, -0.3),
+                leg_y_offsets=(0.1, -0.1, 0.1, -0.1),
+                leg_x_offsets=(0.02, 0.02, -0.05, -0.05),
+            ),
+        )
+
+        self.rewards.track_lin_vel_xy_exp.weight = 5.0
+        self.rewards.track_ang_vel_z_exp.weight = 5.0
+        self.rewards.action_rate_l2 = None
+        self.rewards.cpg_action_rate = RewTerm(
+            func=mdp.pmtg_cpg_args_smoothness_l2,
+            weight=-0.1,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
+        self.rewards.residuals_action_rate = RewTerm(
+            func=mdp.pmtg_residuals_smoothness_l2,
+            weight=-0.1,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
+        self.rewards.residuals_magnitude = RewTerm(
+            func=mdp.pmtg_tanh_residuals_l2,
+            weight=-0.1,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
+        self.rewards.stand_still_cpg = RewTerm(
+            func=mdp.pmtg_cpg_when_stationary_l2,
+            weight=-2.0,
+            params={
+                "action_name": "joint_pos",
+            },
+        )
