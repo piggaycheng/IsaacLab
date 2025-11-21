@@ -388,12 +388,12 @@ class HybridFourDimTrajectoryGenerator:
             device=self.device,
         )
         self.default_y_offset = torch.as_tensor(
-            trajectory_generator_params.leg_y_offsets[leg_index],
+            trajectory_generator_params.default_leg_y_offsets[leg_index],
             dtype=self.dtype,
             device=self.device,
         )
         self.default_x_offset = torch.as_tensor(
-            trajectory_generator_params.leg_x_offsets[leg_index],
+            trajectory_generator_params.default_leg_x_offsets[leg_index],
             dtype=self.dtype,
             device=self.device,
         )

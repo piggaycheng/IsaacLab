@@ -380,7 +380,7 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
         )  # FL, FR, RL, RR
         """預設的腳部高度, 用於計算Z軸位置"""
 
-        leg_y_offsets: tuple[float, float, float, float] = (
+        default_leg_y_offsets: tuple[float, float, float, float] = (
             0.0,
             0.0,
             0.0,
@@ -388,7 +388,7 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
         )  # FL, FR, RL, RR
         """四條腿的Y軸預設偏移量, 用於計算Y軸位置"""
 
-        leg_x_offsets: tuple[float, float, float, float] = (
+        default_leg_x_offsets: tuple[float, float, float, float] = (
             0.0,
             0.0,
             0.0,
