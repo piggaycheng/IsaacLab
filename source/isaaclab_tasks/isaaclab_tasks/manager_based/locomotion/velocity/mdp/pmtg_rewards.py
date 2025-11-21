@@ -91,3 +91,36 @@ def pmtg_tanh_residuals_l2(
     curr_tanh_res = _compute_tanh_residuals(action_term, env.action_manager.action)
 
     return torch.sum(torch.square(curr_tanh_res), dim=1)
+
+
+def pmtg_amplitudes_when_stationary(
+    env: ManagerBasedRLEnv,
+    command_name: str = "base_velocity",
+    action_name: str = "joint_pos",
+    threshold: float = 0.1,
+) -> torch.Tensor:
+    """Penalize non-zero amplitudes when the robot is commanded to be stationary.
+
+    This computes the L2 norm of the amplitudes (amp_x, amp_y, amp_z) when the
+    command magnitude is below a threshold.
+    """
+    # Get the command
+    cmd = env.command_manager.get_command(command_name)
+    # Check if stationary
+    is_stationary = (torch.norm(cmd[:, :2], dim=1) < threshold) & (torch.abs(cmd[:, 2]) < threshold)
+
+    # Get the action term
+    action_term = cast(FourLegsPMTGAction, env.action_manager.get_term(action_name))
+
+    # Get tanh-processed CPG args
+    # _compute_tanh_cpg_args returns [freq, amp_x, amp_y, amp_z]
+    tanh_cpg = _compute_tanh_cpg_args(action_term, env.action_manager.action)
+
+    # Extract amplitudes (indices 1, 2, 3)
+    amplitudes = tanh_cpg[:, 1:4]
+
+    # Compute penalty: sum of squares of amplitudes
+    penalty = torch.sum(torch.square(amplitudes), dim=1)
+
+    # Apply mask
+    return penalty * is_stationary.float()
