@@ -207,9 +207,9 @@ class FourLegsPMTGAction(ActionTerm):
         # The first 8 actions are shared trajectory generator parameters
         cpg_args = self.processed_actions[:, :8]
         # FIXME: For debug only, fix the step height to a constant value, others are zero
-        # cpg_args[:, 0] = 2.0  # 頻率
-        # cpg_args[:, 1] = 0.0  # X振幅
-        # cpg_args[:, 2] = 0.5  # Y振幅
+        # cpg_args[:, 0] = 2.5  # 頻率
+        # cpg_args[:, 1] = 0.2  # X振幅
+        # cpg_args[:, 2] = 0.0  # Y振幅
         # cpg_args[:, 3] = 0.15  # Z振幅
 
         # Generate foot target positions for all legs

@@ -479,8 +479,8 @@ class UnitreeGo2FlatEnvCfg_PMTG_v6(UnitreeGo2FlatEnvCfg):
                     [-0.1934, 0.0465, 0.0],
                     [-0.1934, -0.0465, 0.0],
                 ),  # FL, FR, RL, RR
-                foot_default_heights=(-0.3, -0.3, -0.3, -0.3),
-                default_leg_y_offsets=(0.1, -0.1, 0.1, -0.1),
+                foot_default_heights=(-0.3, -0.3, -0.32, -0.32),
+                default_leg_y_offsets=(0.12, -0.12, 0.12, -0.12),
                 default_leg_x_offsets=(0.02, 0.02, -0.05, -0.05),
             ),
         )
