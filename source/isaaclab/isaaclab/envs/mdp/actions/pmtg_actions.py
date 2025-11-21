@@ -148,6 +148,7 @@ class FourLegsPMTGAction(ActionTerm):
         )
 
         # [ LPF (Filter) ] 濾掉高頻雜訊，確保「行走中」的平滑
+        # 注意：此處已對所有 8 個參數 (Freq, Amps, Offsets, Yaw) 進行濾波
         processed_cpg_args = (
             self.cfg.cpg_lpf_alpha * processed_cpg_args
             + (1 - self.cfg.cpg_lpf_alpha) * last_cpg_args
@@ -168,8 +169,13 @@ class FourLegsPMTGAction(ActionTerm):
         self._current_fade += step
 
         # 3. Apply fade factor
-        amplitudes = processed_cpg_args[:, 1:4]
-        processed_cpg_args[:, 1:4] = amplitudes * self._current_fade
+        # 修改：將 Fade 應用於 Amps(1-3), Offsets(4-6), Yaw(7)。
+        # Frequency(0) 保持不變，因為當 Amps=0 時頻率不影響動作幅度。
+        # 這樣確保停止時機器人回到中立站姿且無轉向動作。
+        params_to_fade = processed_cpg_args[:, 1:8]
+        processed_cpg_args[:, 1:8] = params_to_fade * self._current_fade
+
+        # 更新用於觀測的 filtered amplitudes (只取 Ax, Ay, Az)
         self._filtered_amplitudes = processed_cpg_args[:, 1:4]
 
         # Process residuals (always active)
