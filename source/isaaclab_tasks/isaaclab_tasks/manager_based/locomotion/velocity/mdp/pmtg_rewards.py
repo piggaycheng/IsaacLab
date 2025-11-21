@@ -24,7 +24,7 @@ def pmtg_cpg_args_smoothness_l2(
     curr_tanh_cpg = action_term.raw_actions[:, :8]
     prev_tanh_cpg = action_term.last_raw_actions[:, :8]
 
-    return torch.sum(torch.square(curr_tanh_cpg - prev_tanh_cpg), dim=1)
+    return torch.mean(torch.square(curr_tanh_cpg - prev_tanh_cpg), dim=1)
 
 
 def pmtg_residuals_smoothness_l2(
@@ -40,7 +40,7 @@ def pmtg_residuals_smoothness_l2(
     curr_tanh_res = action_term.raw_actions[:, 8:]
     prev_tanh_res = action_term.last_raw_actions[:, 8:]
 
-    return torch.sum(torch.square(curr_tanh_res - prev_tanh_res), dim=1)
+    return torch.mean(torch.square(curr_tanh_res - prev_tanh_res), dim=1)
 
 
 def pmtg_tanh_residuals_l2(
@@ -54,7 +54,7 @@ def pmtg_tanh_residuals_l2(
 
     curr_tanh_res = action_term.raw_actions[:, 8:]
 
-    return torch.sum(torch.square(curr_tanh_res), dim=1)
+    return torch.mean(torch.sum(torch.square(curr_tanh_res), dim=1))
 
 
 def pmtg_cpg_when_stationary_l2(
