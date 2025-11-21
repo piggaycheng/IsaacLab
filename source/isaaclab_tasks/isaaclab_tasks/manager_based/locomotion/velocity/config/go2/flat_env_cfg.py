@@ -423,6 +423,10 @@ class UnitreeGo2FlatEnvCfg_PMTG_v6(UnitreeGo2FlatEnvCfg):
 
         self.scene.robot.actuators["base_legs"].stiffness = 100.0
         self.scene.robot.actuators["base_legs"].damping = 1.0
+        self.scene.imu = ImuCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/base",
+            update_period=0.0,
+        )
 
         self.actions.joint_pos = mdp.FourLegsPMTGActionCfg(
             asset_name="robot",
