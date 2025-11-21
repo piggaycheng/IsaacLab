@@ -28,6 +28,16 @@ def trajectory_generator_joint_pos_des(
     return pmtg_action.joint_pos_des
 
 
+def trajectory_generator_joint_pos_ik(
+    env: ManagerBasedRLEnv, action_name: str
+) -> torch.Tensor:
+    """Observation of the trajectory generator's IK-computed joint positions for each leg."""
+    action_term = env.action_manager.get_term(action_name)
+    # Cast the action term to the specific type to access its properties
+    pmtg_action = cast(FourLegsPMTGAction, action_term)
+    return pmtg_action.joint_pos_ik
+
+
 def last_action(env: ManagerBasedRLEnv, action_name: str = "joint_pos") -> torch.Tensor:
     """Observation of the last action taken (after tanh processing)."""
     action_term = cast(FourLegsPMTGAction, env.action_manager.get_term(action_name))

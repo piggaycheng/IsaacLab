@@ -35,7 +35,7 @@ class FourLegsPMTGAction(ActionTerm):
             self.num_envs, self.action_dim, device=self.device
         )
         self._last_raw_actions = torch.zeros_like(self._raw_actions)
-        self._processed_actions = torch.zeros_like(self.raw_actions)
+        self._processed_actions = torch.zeros_like(self._raw_actions)
         self._phases = torch.zeros(
             self.num_envs, 4, device=self.device
         )  # phase for each leg
@@ -92,6 +92,14 @@ class FourLegsPMTGAction(ActionTerm):
         """Get the desired joint positions from all IK action terms."""
         joint_pos_list = [term.joint_pos_des for term in self.ik_action_terms]
         return torch.cat(joint_pos_list, dim=1)  # Concatenate along the joint dimension
+
+    @property
+    def joint_pos_ik(self) -> torch.Tensor:
+        """Get the IK-computed joint positions from all IK action terms."""
+        joint_pos_ik_list = [term.joint_pos_ik for term in self.ik_action_terms]
+        return torch.cat(
+            joint_pos_ik_list, dim=1
+        )  # Concatenate along the joint dimension
 
     @property
     def filtered_amplitudes(self) -> torch.Tensor:
@@ -275,11 +283,16 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
         else:
             num_joints = len(self._joint_ids)
 
+        self._joint_pos_ik = torch.zeros(self.num_envs, num_joints, device=self.device)
         self._joint_pos_des = torch.zeros(self.num_envs, num_joints, device=self.device)
 
     @property
     def ik_controller(self) -> DifferentialIKController:
         return self._ik_controller
+
+    @property
+    def joint_pos_ik(self) -> torch.Tensor:
+        return self._joint_pos_ik
 
     @property
     def joint_pos_des(self) -> torch.Tensor:
@@ -296,6 +309,8 @@ class MyDifferentialInverseKinematicsAction(DifferentialInverseKinematicsAction)
             joint_pos_des_full_step = self._ik_controller.compute(
                 ee_pos_curr, ee_quat_curr, jacobian, joint_pos
             )
+            self._joint_pos_ik = joint_pos_des_full_step.clone()
+
             # Add residuals to the full step IK solution
             if self._residuals is not None:
                 joint_pos_des_full_step += self._residuals
