@@ -39,9 +39,9 @@ class FourLegsPMTGAction(ActionTerm):
         self._phases = torch.zeros(
             self.num_envs, 4, device=self.device
         )  # phase for each leg
-        self._filtered_amplitudes = torch.zeros(
+        self._processed_amplitudes = torch.zeros(
             self.num_envs, 3, device=self.device
-        )  # filtered amplitudes Ax, Ay, Az
+        )  # processed amplitudes Ax, Ay, Az
         self._current_fade = torch.zeros(self.num_envs, 1, device=self.device)
         self._fade_speed = 0.05
 
@@ -104,9 +104,9 @@ class FourLegsPMTGAction(ActionTerm):
         return torch.stack(joint_pos_ik_list, dim=-1).flatten(start_dim=1)
 
     @property
-    def filtered_amplitudes(self) -> torch.Tensor:
-        """Get the filtered amplitudes (Ax, Ay, Az) from the last processed actions."""
-        return self._filtered_amplitudes
+    def processed_amplitudes(self) -> torch.Tensor:
+        """Get the processed amplitudes (Ax, Ay, Az) from the last processed actions."""
+        return self._processed_amplitudes
 
     def process_actions(self, actions: torch.Tensor):
         """20-D action space: first 8 are for trajectory generator, last 12 are joint position residuals."""
@@ -185,8 +185,7 @@ class FourLegsPMTGAction(ActionTerm):
         params_to_fade = processed_cpg_args[:, 1:8]
         processed_cpg_args[:, 1:8] = params_to_fade * self._current_fade
 
-        # 更新用於觀測的 filtered amplitudes (只取 Ax, Ay, Az)
-        self._filtered_amplitudes = processed_cpg_args[:, 1:4]
+        self._processed_amplitudes = processed_cpg_args[:, 1:4]
 
         # Process residuals (always active)
         residuals_raw = actions[:, 8:]
@@ -244,7 +243,7 @@ class FourLegsPMTGAction(ActionTerm):
         self._raw_actions[env_ids] = 0.0
         self._processed_actions[env_ids] = 0.0
         self._phases[env_ids] = 0.0
-        self._filtered_amplitudes[env_ids] = 0.0
+        self._processed_amplitudes[env_ids] = 0.0
         self._current_fade[env_ids] = 0.0
         # Reset the phase for each trajectory generator
         for i in range(4):

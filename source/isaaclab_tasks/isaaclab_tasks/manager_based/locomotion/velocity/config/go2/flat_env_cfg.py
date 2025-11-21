@@ -75,7 +75,7 @@ class PMTGObservationsCfg(ObservationsCfg):
                 "action_name": "joint_pos",
             },
         )
-        pmtg_joint_pos_des = ObsTerm(
+        pmtg_joint_pos_error = ObsTerm(
             func=mdp.trajectory_generator_joint_pos_error,
             params={
                 "action_name": "joint_pos",
@@ -483,32 +483,69 @@ class UnitreeGo2FlatEnvCfg_PMTG_v6(UnitreeGo2FlatEnvCfg):
 
         self.rewards.track_lin_vel_xy_exp.weight = 5.0
         self.rewards.track_ang_vel_z_exp.weight = 5.0
+        self.rewards.dof_pos_limits.weight = -1.0
         self.rewards.action_rate_l2 = None
+        self.rewards.feet_slide_penalty = RewTerm(
+            func=mdp.feet_slide,
+            weight=-2.0,
+            params={
+                "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+            },
+        )
+        self.rewards.feet_air_time = RewTerm(
+            func=spot_mdp.air_time_reward,
+            weight=5.0,
+            params={
+                "mode_time": 0.3,
+                "velocity_threshold": 0.3,
+                "asset_cfg": SceneEntityCfg("robot"),
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
+            },
+        )
         self.rewards.cpg_action_rate = RewTerm(
             func=mdp.pmtg_cpg_args_smoothness_l2,
-            weight=-0.1,
+            weight=-3.0,
             params={
                 "action_name": "joint_pos",
             },
         )
         self.rewards.residuals_action_rate = RewTerm(
             func=mdp.pmtg_residuals_smoothness_l2,
-            weight=-0.1,
+            weight=-1.0,
             params={
                 "action_name": "joint_pos",
             },
         )
         self.rewards.residuals_magnitude = RewTerm(
             func=mdp.pmtg_tanh_residuals_l2,
-            weight=-0.1,
+            weight=-2.0,
             params={
                 "action_name": "joint_pos",
             },
         )
         self.rewards.stand_still_cpg = RewTerm(
             func=mdp.pmtg_cpg_when_stationary_l2,
-            weight=-2.0,
+            weight=-1.0,
+            params={
+                "command_name": "base_velocity",
+                "action_name": "joint_pos",
+            },
+        )
+        self.rewards.stand_still_amp_z = RewTerm(
+            func=mdp.pmtg_amplitudes_z_when_stationary_l2,
+            weight=-1.0,
+            params={
+                "command_name": "base_velocity",
+                "action_name": "joint_pos",
+            },
+        )
+        self.rewards.joint_pos_ik_error = RewTerm(
+            func=mdp.pmtg_joint_pos_ik_error_l2,
+            weight=-3.0,
             params={
                 "action_name": "joint_pos",
             },
         )
+
+        self.observations = PMTGObservationsCfg()
