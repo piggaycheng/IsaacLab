@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 from typing import TYPE_CHECKING, cast
 
+from isaaclab.managers import SceneEntityCfg
 from isaaclab.assets.articulation.articulation import Articulation
 from isaaclab.envs.mdp.actions.pmtg_actions import FourLegsPMTGAction
 
@@ -120,7 +121,9 @@ def pmtg_amplitudes_z_when_stationary_l2(
 
 
 def pmtg_joint_pos_ik_error_l2(
-    env: ManagerBasedRLEnv, action_name: str = "joint_pos"
+    env: ManagerBasedRLEnv,
+    action_name: str = "joint_pos",
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
     """Penalize the L2 norm of the difference between IK-computed joint positions and current joint positions.
 
@@ -135,8 +138,8 @@ def pmtg_joint_pos_ik_error_l2(
     ik_pos = pmtg_action.joint_pos_ik
 
     # Get current joint positions
-    asset: Articulation = env.scene["robot"]
-    curr_pos = asset.data.joint_pos[:, asset.joint_ids]
+    asset: Articulation = env.scene[asset_cfg.name]
+    curr_pos = asset.data.joint_pos[:, asset_cfg.joint_ids]
 
     # Compute L2 norm of the difference
     error = ik_pos - curr_pos
