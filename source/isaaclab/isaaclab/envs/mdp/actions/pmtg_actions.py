@@ -34,6 +34,7 @@ class FourLegsPMTGAction(ActionTerm):
         self._raw_actions = torch.zeros(
             self.num_envs, self.action_dim, device=self.device
         )
+        self._last_raw_actions = torch.zeros_like(self._raw_actions)
         self._processed_actions = torch.zeros_like(self.raw_actions)
         self._phases = torch.zeros(
             self.num_envs, 4, device=self.device
@@ -71,6 +72,10 @@ class FourLegsPMTGAction(ActionTerm):
         return self._raw_actions
 
     @property
+    def last_raw_actions(self) -> torch.Tensor:
+        return self._last_raw_actions
+
+    @property
     def processed_actions(self) -> torch.Tensor:
         return self._processed_actions
 
@@ -100,6 +105,7 @@ class FourLegsPMTGAction(ActionTerm):
         # Apply tanh to all actions first
         actions = torch.tanh(actions)
         # Store the raw actions after tanh
+        self._last_raw_actions[:] = self._raw_actions
         self._raw_actions[:] = actions
 
         last_cpg_args = self._processed_actions[:, :8].clone()
@@ -218,6 +224,7 @@ class FourLegsPMTGAction(ActionTerm):
             term.apply_actions()
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        self._last_raw_actions[env_ids] = 0.0
         self._raw_actions[env_ids] = 0.0
         self._processed_actions[env_ids] = 0.0
         self._phases[env_ids] = 0.0
