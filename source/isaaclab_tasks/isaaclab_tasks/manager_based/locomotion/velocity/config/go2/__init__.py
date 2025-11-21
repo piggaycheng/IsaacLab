@@ -208,3 +208,13 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:UnitreeGo2PMTGRecurrentPPORunnerCfg_V2",
     },
 )
+
+gym.register(
+    id="Isaac-Velocity-Flat-Unitree-Go2-PMTG-v8",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.flat_env_cfg:UnitreeGo2FlatEnvCfg_PMTG_v6",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:UnitreeGo2PMTGRecurrentPPORunnerCfg_V2",
+    },
+)
