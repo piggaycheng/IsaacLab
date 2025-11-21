@@ -94,46 +94,63 @@ class FourLegsPMTGAction(ActionTerm):
         return self._filtered_amplitudes
 
     def process_actions(self, actions: torch.Tensor):
-        """16-D action space: first 4 are for trajectory generator, last 12 are joint position residuals."""
-
-        last_tg_args = self._processed_actions[:, :4].clone()
-        last_residuals = self._processed_actions[:, 4:].clone()
-
-        self._raw_actions[:] = actions
+        """20-D action space: first 8 are for trajectory generator, last 12 are joint position residuals."""
 
         # [ Policy Output (Raw) ]  <-- 神經網路輸出，可能帶有雜訊或突波
-        tg_actions_raw = actions[:, :4]
-        frequency, amp_x, amp_y, amp_z = tg_actions_raw.unbind(dim=1)
+        # Apply tanh to all actions first
+        actions = torch.tanh(actions)
+        # Store the raw actions after tanh
+        self._raw_actions[:] = actions
 
-        # [ Tanh & Mapping ]       <-- 限制範圍
-        processed_tg_args = torch.stack(
+        last_cpg_args = self._processed_actions[:, :8].clone()
+        last_residuals = self._processed_actions[:, 8:].clone()
+
+        cpg_actions_raw = actions[:, :8]
+        frequency, amp_x, amp_y, amp_z, offset_x, offset_y, offset_z, yaw_param = (
+            cpg_actions_raw.unbind(dim=1)
+        )
+
+        # [ Mapping ]       <-- 限制範圍
+        processed_cpg_args = torch.stack(
             [
-                self.tanh_process(
+                self.tanh_post_process(
                     frequency, self.cfg.trajectory_generator_params.frequency_limit
                 ),
-                self.tanh_process(
+                self.tanh_post_process(
                     amp_x, self.cfg.trajectory_generator_params.step_length_x_limit
                 ),
-                self.tanh_process(
+                self.tanh_post_process(
                     amp_y, self.cfg.trajectory_generator_params.step_length_y_limit
                 ),
-                self.tanh_process(
+                self.tanh_post_process(
                     amp_z, self.cfg.trajectory_generator_params.step_height_limit
+                ),
+                self.tanh_post_process(
+                    offset_x, self.cfg.trajectory_generator_params.offset_x_limit
+                ),
+                self.tanh_post_process(
+                    offset_y, self.cfg.trajectory_generator_params.offset_y_limit
+                ),
+                self.tanh_post_process(
+                    offset_z, self.cfg.trajectory_generator_params.offset_z_limit
+                ),
+                self.tanh_post_process(
+                    yaw_param, self.cfg.trajectory_generator_params.yaw_limit
                 ),
             ],
             dim=1,
         )
 
         # [ LPF (Filter) ] 濾掉高頻雜訊，確保「行走中」的平滑
-        processed_tg_args = (
-            self.cfg.cpg_lpf_alpha * processed_tg_args
-            + (1 - self.cfg.cpg_lpf_alpha) * last_tg_args
+        processed_cpg_args = (
+            self.cfg.cpg_lpf_alpha * processed_cpg_args
+            + (1 - self.cfg.cpg_lpf_alpha) * last_cpg_args
         )
 
         # [ Fade Factor ] 控制整體強度，確保「起步/停止」的平滑
         # 1. Determine target fade based on command velocity (estimated from amplitudes)
         # amp_x, amp_y are at indices 1 and 2
-        amplitudes_xy = processed_tg_args[:, 1:3]
+        amplitudes_xy = processed_cpg_args[:, 1:3]
         speed_norm = torch.norm(amplitudes_xy, dim=1, keepdim=True)
 
         target_fade = torch.where(speed_norm > self.cfg.command_threshold, 1.0, 0.0)
@@ -145,13 +162,15 @@ class FourLegsPMTGAction(ActionTerm):
         self._current_fade += step
 
         # 3. Apply fade factor
-        amplitudes = processed_tg_args[:, 1:4]
-        processed_tg_args[:, 1:4] = amplitudes * self._current_fade
-        self._filtered_amplitudes = processed_tg_args[:, 1:4]
+        amplitudes = processed_cpg_args[:, 1:4]
+        processed_cpg_args[:, 1:4] = amplitudes * self._current_fade
+        self._filtered_amplitudes = processed_cpg_args[:, 1:4]
 
         # Process residuals (always active)
-        residuals_raw = actions[:, 4:]
-        processed_residuals = self.tanh_process(residuals_raw, self.cfg.residuals_limit)
+        residuals_raw = actions[:, 8:]
+        processed_residuals = self.tanh_post_process(
+            residuals_raw, self.cfg.residuals_limit
+        )
 
         # Apply LPF to residuals
         processed_residuals = (
@@ -160,17 +179,17 @@ class FourLegsPMTGAction(ActionTerm):
         )
 
         self._processed_actions = torch.cat(
-            [processed_tg_args, processed_residuals], dim=1
+            [processed_cpg_args, processed_residuals], dim=1
         )
 
         # [ CPG Computation ] 計算正弦波軌跡
-        # The first 4 actions are shared trajectory generator parameters
-        tg_args = self.processed_actions[:, :4]
+        # The first 8 actions are shared trajectory generator parameters
+        cpg_args = self.processed_actions[:, :8]
         # FIXME: For debug only, fix the step height to a constant value, others are zero
-        # tg_args[:, 0] = 2.0  # 頻率
-        # tg_args[:, 1] = 0.0  # X振幅
-        # tg_args[:, 2] = 0.5  # Y振幅
-        # tg_args[:, 3] = 0.15  # Z振幅
+        # cpg_args[:, 0] = 2.0  # 頻率
+        # cpg_args[:, 1] = 0.0  # X振幅
+        # cpg_args[:, 2] = 0.5  # Y振幅
+        # cpg_args[:, 3] = 0.15  # Z振幅
 
         # Generate foot target positions for all legs
         # The result is a list of tensors, where each tensor is for a leg.
@@ -179,7 +198,7 @@ class FourLegsPMTGAction(ActionTerm):
             self.trajectory_generators
         ):
             foot_target_position, phase = trajectory_generator.generate(
-                tg_args, self._env.step_dt
+                cpg_args, self._env.step_dt
             )
             foot_target_positions.append(foot_target_position)
             # Save the phase for each leg
@@ -189,7 +208,7 @@ class FourLegsPMTGAction(ActionTerm):
         # Process actions for each leg
         for i, ik_term in enumerate(self.ik_action_terms):
             # Set the residual for the current leg's joints
-            residual = self.processed_actions[:, 4 + i * 3 : 7 + i * 3]
+            residual = self.processed_actions[:, 8 + i * 3 : 11 + i * 3]
             ik_term.set_residuals(residual)
             # Set the foot target position for the current leg
             ik_term.process_actions(foot_target_positions[i])
@@ -218,16 +237,14 @@ class FourLegsPMTGAction(ActionTerm):
             # Reset the IK action terms for the specified environments
             self.ik_action_terms[i].reset(env_ids)
 
-    def tanh_process(
+    def tanh_post_process(
         self, data: torch.Tensor, limit: tuple[float, float]
     ) -> torch.Tensor:
-        # 使用 tanh 將 data 從 (-inf, inf) 映射到 (-1, 1)
-        tanh_data = torch.tanh(data)
         # 將 (-1, 1) 的範圍縮放到目標範圍 [min, max]
         data_min, data_max = limit
         data_range = (data_max - data_min) / 2.0
         data_bias = (data_max + data_min) / 2.0
-        scaled_data = tanh_data * data_range + data_bias
+        scaled_data = data * data_range + data_bias
         return scaled_data
 
 
@@ -388,8 +405,8 @@ class HybridFourDimTrajectoryGenerator:
         計算單腿足端目標 (x, y, z)，支援批次處理。
 
         Args:
-            actions (torch.Tensor): 來自 policy 的 CPG 調變參數張量, shape (batch_size, 4)。
-                                    分別為 (frequency, amplitude_x, amplitude_y, amplitude_z)
+            actions (torch.Tensor): 來自 policy 的 CPG 調變參數張量, shape (batch_size, 8)。
+                                    分別為 (frequency, amplitude_x, amplitude_y, amplitude_z, offset_x, offset_y, offset_z, yaw_param)
             dt (float or torch.Tensor): 單步控制時間 (s)。可以是 scalar 或 shape (batch_size,)。
 
         Returns:
@@ -404,7 +421,38 @@ class HybridFourDimTrajectoryGenerator:
 
         # 1. 使用 tanh 將 CPG 參數從 (-inf, inf) 映射到 (-1, 1)
         actions_on_device = actions.to(self.device, self.dtype)
-        frequency, amp_x, amp_y, amp_z = torch.unbind(actions_on_device, dim=1)
+        (
+            frequency,
+            amp_x,
+            amp_y,
+            amp_z,
+            offset_x,
+            offset_y,
+            offset_z,
+            yaw_param,
+        ) = torch.unbind(actions_on_device, dim=1)
+
+        # Yaw logic
+        turn_gain = 0.15
+
+        # X-axis (Differential Steering)
+        diff_x = yaw_param * turn_gain
+        # 0: FL, 1: FR, 2: RL, 3: RR
+        is_left = (self.leg_index == 0) or (self.leg_index == 2)
+
+        if is_left:
+            amp_x_leg = amp_x - diff_x
+        else:
+            amp_x_leg = amp_x + diff_x
+
+        # Y-axis (Lateral Cornering)
+        diff_y = yaw_param * turn_gain
+        is_front = (self.leg_index == 0) or (self.leg_index == 1)
+
+        if is_front:
+            amp_y_leg = amp_y + diff_y
+        else:
+            amp_y_leg = amp_y - diff_y
 
         # 2. 使用固定的占空比
         target_swing_duty_cycle = self.default_swing_duty_cycle
@@ -426,24 +474,24 @@ class HybridFourDimTrajectoryGenerator:
         z_swing_offset = 0.5 * amp_z * (1 - torch.cos(2 * torch.pi * phase_in_swing))
         z_stance_offset = torch.zeros_like(z_swing_offset)
         z_offset = torch.where(is_swing, z_swing_offset, z_stance_offset)
-        # 最終 Z 軸位置 = 預設高度 (偏移量 O_z) + 軌跡
-        z = self.default_foot_height + z_offset
+        # 最終 Z 軸位置 = 預設高度 (偏移量 O_z) + 軌跡 + offset_z
+        z = self.default_foot_height + z_offset + offset_z
 
         # --- X, Y 軸軌跡 (由振幅 Ax, Ay 控制) ---
         swing_multiplier = -0.5 * torch.cos(torch.pi * phase_in_swing)
-        x_swing = amp_x * swing_multiplier
-        y_swing = amp_y * swing_multiplier
+        x_swing = amp_x_leg * swing_multiplier
+        y_swing = amp_y_leg * swing_multiplier
 
         stance_multiplier = 0.5 * (1 - 2 * phase_in_stance)
-        x_stance = amp_x * stance_multiplier
-        y_stance = amp_y * stance_multiplier
+        x_stance = amp_x_leg * stance_multiplier
+        y_stance = amp_y_leg * stance_multiplier
 
         x_motion = torch.where(is_swing, x_swing, x_stance)
         y_motion = torch.where(is_swing, y_swing, y_stance)
 
-        # 最終 X, Y 軸位置 = 預設偏移量 (O_x, O_y) + 軌跡
-        x = self.default_x_offset + x_motion
-        y = self.default_y_offset + y_motion
+        # 最終 X, Y 軸位置 = 預設偏移量 (O_x, O_y) + 軌跡 + offset_x, offset_y
+        x = self.default_x_offset + x_motion + offset_x
+        y = self.default_y_offset + y_motion + offset_y
 
         # 注意：轉向 (Yaw) 效果應由上層控制器通過為左右腿提供不同的 `amplitude_y` 來實現，
         # 因此這裡不再單獨處理 `yaw_rate`。

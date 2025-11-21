@@ -355,6 +355,23 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
         step_length_y_limit: tuple[float, float] = (-0.2, 0.2)
         """Y step length limits (m). Defaults to (-0.2, 0.2)."""
 
+        step_height_limit: tuple[float, float] = (0.0, 0.2)
+        """Step height limits (m). Defaults to (0.0, 0.2)."""
+
+        # Offset limits
+        offset_x_limit: tuple[float, float] = (-0.1, 0.1)
+        """X offset limits (m). Defaults to (-0.1, 0.1)."""
+
+        offset_y_limit: tuple[float, float] = (-0.1, 0.1)
+        """Y offset limits (m). Defaults to (-0.1, 0.1)."""
+
+        offset_z_limit: tuple[float, float] = (-0.1, 0.1)
+        """Z offset limits (m). Defaults to (-0.1, 0.1)."""
+
+        # Yaw limit
+        yaw_limit: tuple[float, float] = (-1.0, 1.0)
+        """Yaw command limits. Defaults to (-1.0, 1.0)."""
+
         foot_default_heights: tuple[float, float, float, float] = (
             0.0,
             0.0,
@@ -394,8 +411,8 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
 
     class_type: type[ActionTerm] = pmtg_actions.FourLegsPMTGAction
 
-    action_dim: int = 16
-    """The dimension of the action space. Defaults to 16 (4 for trajectory generator, 12 for joint angle residuals)."""
+    action_dim: int = 20
+    """The dimension of the action space. Defaults to 20 (8 for trajectory generator, 12 for joint angle residuals)."""
 
     ik_action_cfgs: list[DifferentialInverseKinematicsActionCfg] = MISSING
     """List of IK configurations for the four legs."""
