@@ -500,9 +500,9 @@ class HybridFourDimTrajectoryGenerator:
         # --- Z 軸軌跡 (由振幅 Az 控制) ---
         z_swing_offset = 0.5 * amp_z * (1 - torch.cos(2 * torch.pi * phase_in_swing))
         z_stance_offset = torch.zeros_like(z_swing_offset)
-        z_offset = torch.where(is_swing, z_swing_offset, z_stance_offset)
+        z_motion = torch.where(is_swing, z_swing_offset, z_stance_offset)
         # 最終 Z 軸位置 = 預設高度 (偏移量 O_z) + 軌跡 + offset_z
-        z = self.default_foot_height + z_offset + offset_z
+        z = self.default_foot_height + z_motion + offset_z
 
         # --- X, Y 軸軌跡 (由振幅 Ax, Ay 控制) ---
         swing_multiplier = -0.5 * torch.cos(torch.pi * phase_in_swing)
