@@ -165,11 +165,9 @@ class FourLegsPMTGAction(ActionTerm):
         )
 
         # [ Fade Factor ] 控制整體強度，確保「起步/停止」的平滑
-        # 1. Determine target fade based on command velocity (estimated from amplitudes)
-        # amp_x, amp_y are at indices 1 and 2
-        amplitudes_xy = processed_cpg_args[:, 1:3]
-        speed_norm = torch.norm(amplitudes_xy, dim=1, keepdim=True)
-
+        # 1. Determine target fade based on command speed
+        cmd = self._env.command_manager.get_command("base_velocity")
+        speed_norm = torch.norm(cmd, dim=1, keepdim=True)
         target_fade = torch.where(speed_norm > self.cfg.command_threshold, 1.0, 0.0)
 
         # 2. Linear Approach to target fade
