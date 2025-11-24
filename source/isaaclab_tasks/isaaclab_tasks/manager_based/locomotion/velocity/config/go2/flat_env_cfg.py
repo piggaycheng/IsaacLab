@@ -482,6 +482,12 @@ class UnitreeGo2FlatEnvCfg_PMTG_v6(UnitreeGo2FlatEnvCfg):
                 foot_default_heights=(-0.3, -0.3, -0.32, -0.32),
                 default_leg_y_offsets=(0.12, -0.12, 0.12, -0.12),
                 default_leg_x_offsets=(0.02, 0.02, -0.05, -0.05),
+                step_length_x_limit=(-0.2, 0.2),
+                step_length_y_limit=(-0.15, 0.15),
+                step_height_limit=(0.0, 0.15),
+                offset_x_limit=(-0.03, 0.03),
+                offset_y_limit=(-0.02, 0.02),
+                offset_z_limit=(-0.02, 0.02),
             ),
         )
 
@@ -491,7 +497,7 @@ class UnitreeGo2FlatEnvCfg_PMTG_v6(UnitreeGo2FlatEnvCfg):
         self.rewards.action_rate_l2 = None
         self.rewards.feet_slide_penalty = RewTerm(
             func=mdp.feet_slide,
-            weight=-2.0,
+            weight=-1.0,
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names=".*_foot"),
                 "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
@@ -499,31 +505,31 @@ class UnitreeGo2FlatEnvCfg_PMTG_v6(UnitreeGo2FlatEnvCfg):
         )
         self.rewards.feet_air_time = RewTerm(
             func=spot_mdp.air_time_reward,
-            weight=5.0,
+            weight=1.0,
             params={
                 "mode_time": 0.3,
-                "velocity_threshold": 0.3,
+                "velocity_threshold": 0.5,
                 "asset_cfg": SceneEntityCfg("robot"),
                 "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
             },
         )
         self.rewards.cpg_action_rate = RewTerm(
             func=mdp.pmtg_cpg_args_smoothness_l2,
-            weight=-3.0,
+            weight=-2.5,
             params={
                 "action_name": "joint_pos",
             },
         )
         self.rewards.residuals_action_rate = RewTerm(
             func=mdp.pmtg_residuals_smoothness_l2,
-            weight=-1.0,
+            weight=-0.2,
             params={
                 "action_name": "joint_pos",
             },
         )
         self.rewards.residuals_magnitude = RewTerm(
             func=mdp.pmtg_tanh_residuals_l2,
-            weight=-2.0,
+            weight=-1.0,
             params={
                 "action_name": "joint_pos",
             },
@@ -538,7 +544,7 @@ class UnitreeGo2FlatEnvCfg_PMTG_v6(UnitreeGo2FlatEnvCfg):
         )
         self.rewards.stand_still_amp_z = RewTerm(
             func=mdp.pmtg_amplitudes_z_when_stationary_l2,
-            weight=-1.0,
+            weight=-0.1,
             params={
                 "command_name": "base_velocity",
                 "action_name": "joint_pos",
@@ -546,9 +552,26 @@ class UnitreeGo2FlatEnvCfg_PMTG_v6(UnitreeGo2FlatEnvCfg):
         )
         self.rewards.joint_pos_ik_error = RewTerm(
             func=mdp.pmtg_joint_pos_ik_error_l2,
-            weight=-3.0,
+            weight=-5.0,
             params={
                 "action_name": "joint_pos",
+            },
+        )
+        self.rewards.undesired_contacts = RewTerm(
+            func=mdp.undesired_contacts,
+            weight=-1.0,
+            params={
+                "sensor_cfg": SceneEntityCfg(
+                    "contact_forces", body_names=".*thigh|.*calf"
+                ),
+                "threshold": 1.0,
+            },
+        )
+        self.rewards.base_height = RewTerm(
+            func=mdp.base_height_l2,
+            weight=-1.0,
+            params={
+                "target_height": 0.3,
             },
         )
 
