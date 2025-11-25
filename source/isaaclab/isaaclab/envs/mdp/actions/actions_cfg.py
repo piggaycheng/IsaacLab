@@ -341,9 +341,6 @@ class FourLegsPMTGActionCfg(ActionTermCfg):
         default_swing_duty_cycle: float = 0.5
         """Fixed swing duty cycle ratio. Defaults to 0.5."""
 
-        step_height_limit: tuple[float, float] = (0.0, 0.2)
-        """Step height limits (m). Defaults to (0.0, 0.2)."""
-
         # Frequency limits
         frequency_limit: tuple[float, float] = (1.0, 4.0)
         """Frequency limits (Hz). Defaults to (1.0, 4.0)."""
