@@ -19,13 +19,17 @@ from isaacsim.core.utils.prims import define_prim, get_prim_at_path
 from isaacsim.storage.native import get_assets_root_path
 from isaacsim.core.utils.extensions import enable_extension
 
-from isaaclab_tasks.manager_based.locomotion.velocity.config.go2.policy.go2_policy import Go2FlatTerrainPolicy
+from isaaclab_tasks.manager_based.locomotion.velocity.config.go2.policy.go2_policy import (
+    Go2FlatTerrainPolicy,
+)
 import argparse
 
 
 class Go2_runner(object):
 
-    def __init__(self, render_dt, training_folder) -> None:
+    def __init__(
+        self, render_dt, training_folder, urdf_path, urdf_package_dir, is_local=None
+    ) -> None:
         """
         creates the simulation world with preset physics_dt and render_dt and creates an Go2 robot inside the warehouse
 
@@ -41,18 +45,26 @@ class Go2_runner(object):
 
         # spawn warehouse scene
         prim = define_prim("/World/Ground", "Xform")
-        asset_path = assets_root_path + "/Isaac/Environments/Grid/default_environment.usd"
+        asset_path = (
+            assets_root_path + "/Isaac/Environments/Grid/default_environment.usd"
+        )
         prim.GetReferences().AddReference(asset_path)
 
         self._go2 = Go2FlatTerrainPolicy(
             prim_path="/World/go2",
             training_folder=training_folder,
+            urdf_path=urdf_path,
+            urdf_package_dir=urdf_package_dir,
             name="go2",
             usd_path=assets_root_path + "/Isaac/Robots/Unitree/Go2/go2.usd",
             position=np.array([0, 0, 0.5]),
         )
 
-        self._world = World(stage_units_in_meters=1.0, physics_dt=self._go2.physics_dt, rendering_dt=render_dt)
+        self._world = World(
+            stage_units_in_meters=1.0,
+            physics_dt=self._go2.physics_dt,
+            rendering_dt=render_dt,
+        )
 
         self._base_command = np.zeros(3)
 
@@ -80,6 +92,8 @@ class Go2_runner(object):
         self.needs_reset = False
         self.first_step = True
 
+        self._is_local = is_local
+
     def setup(self) -> None:
         """
         Set up keyboard listener and add physics callback
@@ -88,8 +102,12 @@ class Go2_runner(object):
         self._appwindow = omni.appwindow.get_default_app_window()
         self._input = carb.input.acquire_input_interface()
         self._keyboard = self._appwindow.get_keyboard()
-        self._sub_keyboard = self._input.subscribe_to_keyboard_events(self._keyboard, self._sub_keyboard_event)
-        self._world.add_physics_callback("go2_forward", callback_fn=self.on_physics_step)
+        self._sub_keyboard = self._input.subscribe_to_keyboard_events(
+            self._keyboard, self._sub_keyboard_event
+        )
+        self._world.add_physics_callback(
+            "go2_forward", callback_fn=self.on_physics_step
+        )
 
     def on_physics_step(self, step_size) -> None:
         """
@@ -104,7 +122,9 @@ class Go2_runner(object):
             self.needs_reset = False
             self.first_step = True
         else:
-            self._go2.forward(step_size, self._base_command, action=None)
+            self._go2.forward(
+                step_size, self._base_command, action=None, is_local=self._is_local
+            )
 
     def run(self) -> None:
         """
@@ -128,12 +148,16 @@ class Go2_runner(object):
         if event.type == carb.input.KeyboardEventType.KEY_PRESS:
             # on pressing, the command is incremented
             if event.input.name in self._input_keyboard_mapping:
-                self._base_command += np.array(self._input_keyboard_mapping[event.input.name])
+                self._base_command += np.array(
+                    self._input_keyboard_mapping[event.input.name]
+                )
 
         elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
             # on release, the command is decremented
             if event.input.name in self._input_keyboard_mapping:
-                self._base_command -= np.array(self._input_keyboard_mapping[event.input.name])
+                self._base_command -= np.array(
+                    self._input_keyboard_mapping[event.input.name]
+                )
         return True
 
 
@@ -144,17 +168,42 @@ def main():
     """
 
     parser = argparse.ArgumentParser(description="Go2 Locomotion Demo")
-    parser.add_argument("--training_folder", type=str, default="", help="Path to the training folder containing the policy and env yaml")
+    parser.add_argument(
+        "--training_folder",
+        type=str,
+        help="Path to the training folder containing the policy and env yaml",
+    )
+    parser.add_argument(
+        "--is_local",
+        type=bool,
+        default=True,
+        help="Whether to run in local mode or not",
+    )
+    parser.add_argument("--urdf_path", type=str, help="Path to the URDF folder")
+    parser.add_argument(
+        "--urdf_package_dir", type=str, help="Path to the URDF package folder"
+    )
     args = parser.parse_args()
 
     training_folder = args.training_folder
     if training_folder == "":
-        carb.log_error("Please provide a valid training folder path containing the policy and env yaml")
+        carb.log_error(
+            "Please provide a valid training folder path containing the policy and env yaml"
+        )
         return
+    is_local = args.is_local
+    urdf_path = args.urdf_path
+    urdf_package_dir = args.urdf_package_dir
 
     render_dt = 1 / 60.0
 
-    runner = Go2_runner(render_dt=render_dt, training_folder=training_folder)
+    runner = Go2_runner(
+        render_dt=render_dt,
+        training_folder=training_folder,
+        urdf_path=urdf_path,
+        urdf_package_dir=urdf_package_dir,
+        is_local=is_local,
+    )
     simulation_app.update()
     runner._world.reset()
     simulation_app.update()
