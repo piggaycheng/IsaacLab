@@ -17,6 +17,9 @@ import omni.appwindow  # Contains handle to keyboard
 from isaacsim.core.api import World
 from isaacsim.core.utils.prims import define_prim, get_prim_at_path
 from isaacsim.storage.native import get_assets_root_path
+from isaacsim.core.utils.extensions import enable_extension
+
+enable_extension("isaacsim.ros2.bridge")
 
 from isaaclab_tasks.manager_based.locomotion.velocity.config.go2.policy.go2_policy import Go2FlatTerrainPolicy
 import argparse
@@ -43,7 +46,7 @@ class Go2LocomotionNode(Node):
         reliable_qos = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_LAST,
-            depth=5
+            depth=10
         )
 
         self.obs_publisher = self.create_publisher(
@@ -74,12 +77,7 @@ class Go2LocomotionNode(Node):
             Float64MultiArray,
             '/action',
             self.action_callback,
-            QoSProfile(
-                history=QoSHistoryPolicy.KEEP_LAST,
-                depth=1,
-                reliability=QoSReliabilityPolicy.BEST_EFFORT,
-                durability=QoSDurabilityPolicy.VOLATILE,
-            )
+            sensor_qos
         )
 
         self._action = None  # 用於存儲接收到的 action
