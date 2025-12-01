@@ -503,26 +503,16 @@ class UnitreeGo2FlatEnvCfg_PMTG_v6(UnitreeGo2FlatEnvCfg):
                 "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
             },
         )
-        self.rewards.feet_air_time = RewTerm(
-            func=spot_mdp.air_time_reward,
-            weight=1.0,
-            params={
-                "mode_time": 0.3,
-                "velocity_threshold": 0.5,
-                "asset_cfg": SceneEntityCfg("robot"),
-                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_foot"),
-            },
-        )
         self.rewards.cpg_action_rate = RewTerm(
             func=mdp.pmtg_cpg_args_smoothness_l2,
-            weight=-2.5,
+            weight=-4.0,
             params={
                 "action_name": "joint_pos",
             },
         )
         self.rewards.residuals_action_rate = RewTerm(
             func=mdp.pmtg_residuals_smoothness_l2,
-            weight=-0.2,
+            weight=-1.0,
             params={
                 "action_name": "joint_pos",
             },
@@ -576,3 +566,19 @@ class UnitreeGo2FlatEnvCfg_PMTG_v6(UnitreeGo2FlatEnvCfg):
         )
 
         self.observations = PMTGObservationsCfg()
+
+
+@configclass
+class UnitreeGo2FlatEnvCfg_PMTG_v6_PLAY(UnitreeGo2FlatEnvCfg_PMTG_v6):
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # make a smaller scene for play
+        self.scene.num_envs = 50
+        self.scene.env_spacing = 2.5
+        # disable randomization for play
+        self.observations.policy.enable_corruption = False
+        # remove random pushing event
+        self.events.base_external_force_torque = None
+        self.events.push_robot = None
