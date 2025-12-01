@@ -112,7 +112,7 @@ class Go2FlatTerrainPolicy(PolicyController):
         self._ik_solver = InverseKinematicsSolver(
             robot_wrapper=robot,
             ee_name_list=["FL_foot", "FR_foot", "RL_foot", "RR_foot"],
-            rate=50.0,
+            rate=self.physics_dt * self.decimation,
         )
 
     def _compute_observation(self, command):
@@ -378,6 +378,8 @@ class Go2FlatTerrainPolicy(PolicyController):
         )
 
         tg_args = torch.from_numpy(processed_cpg_args).double().unsqueeze(0)
+        # For testing purpose, use fixed args
+        # tg_args = torch.tensor([[1.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0]], dtype=torch.double)
 
         foot_target_positions = []
         for trajectory_generator_idx, trajectory_generator in enumerate(
@@ -393,12 +395,20 @@ class Go2FlatTerrainPolicy(PolicyController):
 
         joint_targets = np.zeros(12)
         ik_joint_targets = np.zeros(12)
+
+        # Reorder joints for IK (Isaac Sim order -> URDF order)
+        curr_q_urdf = reorder_joints(
+            from_order=self.joint_names,
+            to_order=ik_joint_names,
+            data=self.current_absolute_joint_positions,
+        )
+
         for idx, foot in enumerate(["FL_foot", "FR_foot", "RL_foot", "RR_foot"]):
             try:
                 ik_joint_targets[idx * 3 : (idx + 1) * 3] = self._ik_solver.solve_ik(
                     ee_name=foot,
                     ee_target_pos=foot_target_positions[idx],
-                    curr_q=self.current_absolute_joint_positions,
+                    curr_q=curr_q_urdf,
                 )[idx * 3 : (idx + 1) * 3]
             except Exception as e:
                 print(f"IK solver error for {foot}: {e}")
@@ -773,6 +783,7 @@ class InverseKinematicsSolver:
                 ee_name,
                 position_cost=1.0,  # [cost] / [m]
                 orientation_cost=0.0,  # [cost] / [rad]
+                lm_damping=1.0e-4,
             )
             self.task_dict[ee_name] = task
 
@@ -801,6 +812,14 @@ class InverseKinematicsSolver:
             self._robot.model.upperPositionLimit,
         )
         self._configuration.update(clipped_q)
+
+        velocity = pink_solve_ik(
+            self._configuration,
+            [task],
+            dt,
+            solver=self.solver,
+        )
+        return self._configuration.integrate(velocity, dt)
 
         # Iteratively solve for the joint configuration
         max_iterations = 50
