@@ -13,7 +13,7 @@ class InverseKinematicsSolver:
         robot_wrapper: pin.RobotWrapper,
         ee_name_list: list[str],
         q_ref: np.ndarray | None = None,
-        rate=50.0,
+        rate=1.0,
         solver="proxqp",
     ):
         """

@@ -108,7 +108,7 @@ class Go2FlatTerrainPolicy(PolicyController):
         self._ik_solver = InverseKinematicsSolver(
             robot_wrapper=robot,
             ee_name_list=["FL_foot", "FR_foot", "RL_foot", "RR_foot"],
-            rate=self.physics_dt * self.decimation,
+            rate=1.0,
         )
 
     def _compute_observation(self, command):
