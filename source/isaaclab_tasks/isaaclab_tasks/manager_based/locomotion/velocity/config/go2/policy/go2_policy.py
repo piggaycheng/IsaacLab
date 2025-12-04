@@ -423,7 +423,7 @@ class Go2FlatTerrainPolicy(PolicyController):
             )
 
         # 目前順序是[L1_hip, L1_thigh, L1_calf, L2_hip, ...]
-        return ik_joint_targets
+        return joint_targets
 
 
 @dataclass
