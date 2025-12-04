@@ -379,7 +379,7 @@ class Go2FlatTerrainPolicy(PolicyController):
 
         tg_args = torch.from_numpy(processed_cpg_args).double().unsqueeze(0)
         # For testing purpose, use fixed args
-        tg_args = torch.tensor([[2.0, 0.2, 0.0, 0.15, 0.0, 0.0, 0.0, 0.0]], dtype=torch.double)
+        # tg_args = torch.tensor([[2.0, 0.2, 0.0, 0.15, 0.0, 0.0, 0.0, 0.0]], dtype=torch.double)
 
         foot_target_positions = []
         for trajectory_generator_idx, trajectory_generator in enumerate(
