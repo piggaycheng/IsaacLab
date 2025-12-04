@@ -21,7 +21,7 @@ from isaacsim.sensors.physics import IMUSensor
 from dataclasses import MISSING, dataclass
 from typing import Tuple
 import torch
-from .ik.pink_ik import get_pin_robot_wrapper, InverseKinematicsSolver
+from .ik.pinocchio_differential_ik import InverseKinematicsSolver
 
 ik_joint_names = [
     "FL_hip_joint",
@@ -104,12 +104,16 @@ class Go2FlatTerrainPolicy(PolicyController):
         self._processed_actions = np.zeros(20)
         self._current_fade = np.zeros(1)
         self._fade_speed = 0.05
-        robot = get_pin_robot_wrapper(urdf_path, urdf_package_dir)
-        self._ik_solver = InverseKinematicsSolver(
-            robot_wrapper=robot,
-            ee_name_list=["FL_foot", "FR_foot", "RL_foot", "RR_foot"],
-            rate=self.physics_dt * self.decimation,
-        )
+
+        self._ik_solvers = []
+        self._foot_names = ["FL_foot", "FR_foot", "RL_foot", "RR_foot"]
+        for foot_name in self._foot_names:
+            self._ik_solvers.append(
+                InverseKinematicsSolver(
+                    urdf_path=urdf_path,
+                    ee_name=foot_name,
+                )
+            )
 
     def _compute_observation(self, command):
         """
@@ -375,7 +379,7 @@ class Go2FlatTerrainPolicy(PolicyController):
 
         tg_args = torch.from_numpy(processed_cpg_args).double().unsqueeze(0)
         # For testing purpose, use fixed args
-        # tg_args = torch.tensor([[1.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0]], dtype=torch.double)
+        tg_args = torch.tensor([[2.0, 0.2, 0.0, 0.15, 0.0, 0.0, 0.0, 0.0]], dtype=torch.double)
 
         foot_target_positions = []
         for trajectory_generator_idx, trajectory_generator in enumerate(
@@ -399,13 +403,15 @@ class Go2FlatTerrainPolicy(PolicyController):
             data=self.current_absolute_joint_positions,
         )
 
-        for idx, foot in enumerate(["FL_foot", "FR_foot", "RL_foot", "RR_foot"]):
+        for idx, foot in enumerate(self._foot_names):
             try:
-                ik_joint_targets[idx * 3 : (idx + 1) * 3] = self._ik_solver.solve_ik(
-                    ee_name=foot,
-                    ee_target_pos=foot_target_positions[idx],
-                    curr_q=curr_q_urdf,
-                )[idx * 3 : (idx + 1) * 3]
+                q_next = self._ik_solvers[idx].compute(
+                    q_current=curr_q_urdf,
+                    target_pos=foot_target_positions[idx],
+                )
+                ik_joint_targets[idx * 3 : (idx + 1) * 3] = q_next[
+                    idx * 3 : (idx + 1) * 3
+                ]
             except Exception as e:
                 print(f"IK solver error for {foot}: {e}")
         self._joint_pos_ik = ik_joint_targets.copy()
@@ -417,7 +423,7 @@ class Go2FlatTerrainPolicy(PolicyController):
             )
 
         # 目前順序是[L1_hip, L1_thigh, L1_calf, L2_hip, ...]
-        return joint_targets
+        return ik_joint_targets
 
 
 @dataclass

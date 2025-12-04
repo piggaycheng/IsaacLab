@@ -4,14 +4,19 @@ from scipy.spatial.transform import Rotation as R
 
 
 class InverseKinematicsSolver:
-    def __init__(self, urdf_path: str, ee_name: str, dt: float = 0.01, damping: float = 0.05):
+    def __init__(
+        self,
+        urdf_path: str,
+        ee_name: str,
+        damping: float = 0.01,
+    ):
         """
         Initialize the Inverse Kinematics Solver using Pinocchio (Standalone).
 
         Args:
             urdf_path (str): Path to the URDF file.
             ee_name (str): Name of the end-effector frame.
-            dt (float): Control time step (seconds).
+            hip_name (str): Name of the hip frame (origin for target_pos).
             damping (float): Damping factor for DLS (lambda).
         """
         # 1. Load Model
@@ -24,74 +29,71 @@ class InverseKinematicsSolver:
         self.ee_id = self.model.getFrameId(ee_name)
 
         # 3. Parameters
-        self.dt = dt
         self.damping_sq = damping**2
 
         # 4. Cache Joint Limits
         self.q_min = self.model.lowerPositionLimit
         self.q_max = self.model.upperPositionLimit
 
-    def compute(self, q_current: np.ndarray, target_pos: np.ndarray, target_quat: np.ndarray) -> np.ndarray:
+        self.neutral_q = np.array(
+            [
+                0.0,
+                0.95995,
+                -1.78023,
+                0.0,
+                0.95995,
+                -1.78023,
+                0.0,
+                0.95995,
+                -1.78023,
+                0.0,
+                0.95995,
+                -1.78023,
+            ],
+            dtype=np.float64,
+        )
+
+    def compute(self, q_current: np.ndarray, target_pos: np.ndarray) -> np.ndarray:
         """
         Compute the next joint configuration using Differential IK (DLS).
 
         Args:
-            q_current (np.ndarray): Current joint configuration.
-            target_pos (np.ndarray): Target position [x, y, z] (in Base frame).
+            q_current (np.ndarray): Current joint configuration (Full robot state).
+            target_pos (np.ndarray): Target position [x, y, z] (relative to Hip frame).
             target_quat (np.ndarray): Target orientation quaternion [x, y, z, w] (in Base frame).
 
         Returns:
-            np.ndarray: The next joint configuration.
+            np.ndarray: The next joint configuration for all joints.
         """
-        # --- A. Forward Kinematics ---
+        # 正向運動學 & Jacobian
         pin.framesForwardKinematics(self.model, self.data, q_current)
         pin.computeJointJacobians(self.model, self.data, q_current)
 
-        # --- B. Get Jacobian ---
-        # Use LOCAL_WORLD_ALIGNED to match the error calculation in World frame
-        J = pin.getJointJacobian(
-            self.model, self.data, self.ee_id, pin.ReferenceFrame.LOCAL_WORLD_ALIGNED
+        # 獲取 6xN 的 Jacobian
+        J_full = pin.getFrameJacobian(
+            self.model, self.data, self.ee_id, pin.LOCAL_WORLD_ALIGNED
         )
 
-        # --- C. Compute Error (6D) ---
-        # 1. Get current EE pose
-        curr_transform = self.data.oMf[self.ee_id]
-        curr_pos = curr_transform.translation
-        curr_rot = curr_transform.rotation
+        # 只取 Linear 部分的 Rows (6 -> 3)
+        J_pos = J_full[:3, :]
 
-        # 2. Position Error
-        pos_err = target_pos - curr_pos
+        # --- 誤差計算 ---
+        # 獲取當前 End-Effector 在 Base Frame 的位置
+        curr_pos = self.data.oMf[self.ee_id].translation
 
-        # 3. Orientation Error
-        # Convert target quaternion to rotation matrix
-        # Note: scipy Rotation expects [x, y, z, w]
-        target_rot = R.from_quat(target_quat).as_matrix()
+        # 計算誤差 (在 Base Frame 下)
+        error = target_pos - curr_pos
 
-        # Calculate rotation error in Local frame: R_diff = R_current.T * R_target
-        # log3 converts rotation matrix difference to axis-angle vector
-        rot_err_local = pin.log3(curr_rot.T @ target_rot)
+        # DLS 求解
+        J_JT = J_pos @ J_pos.T
+        damped_matrix = J_JT + self.damping_sq * np.eye(3)
 
-        # Convert error back to World/Base frame
-        rot_err = curr_rot @ rot_err_local
+        dq = J_pos.T @ np.linalg.solve(damped_matrix, error)
 
-        # 4. Combined Error Vector
-        error = np.concatenate([pos_err, rot_err])
+        # 積分
+        q_next = pin.integrate(self.model, q_current, dq)
 
-        # --- D. Damped Least Squares (DLS) ---
-        # dq = J^T * (J * J^T + lambda^2 * I)^-1 * error
-        m = J.shape[0]  # Typically 6
-        J_JT = J @ J.T
-        damped_matrix = J_JT + self.damping_sq * np.eye(m)
-
-        try:
-            lambda_term = np.linalg.solve(damped_matrix, error)
-            dq = J.T @ lambda_term
-        except np.linalg.LinAlgError:
-            print("Warning: Matrix inversion failed, stopping motion.")
-            dq = np.zeros_like(q_current)
-
-        # --- E. Integration and Clipping ---
-        q_next = pin.integrate(self.model, q_current, dq * self.dt)
+        # 關節限制
         q_next = np.clip(q_next, self.q_min, self.q_max)
 
         return q_next
